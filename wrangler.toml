@@ -1,0 +1,15 @@
+name = "design-board-worker"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "design-board"
+database_id = "dad7ede1-e12b-4d26-9bcb-a1ab0fe1c04e"
+
+[vars]
+# Override via `wrangler secret put` or dashboard
+# MODELSCOPE_API_KEY, QWEN_API_KEY, DEEPSEEK_API_KEY, ZHIPU_API_KEY
+
+[env.production]
+# Production specific config
