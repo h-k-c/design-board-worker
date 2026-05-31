@@ -185,6 +185,14 @@ async function handleGetImage(req, env, id) {
   })
 }
 
+// Resolve Worker image URLs to data URLs so external APIs can access them
+async function resolveImageUrl(imageUrl, env) {
+  const match = imageUrl.match(/\/api\/images\/([^/?#]+)/)
+  if (!match) return imageUrl
+  const row = await env.DB.prepare('SELECT data FROM images WHERE id = ?').bind(match[1]).first()
+  return row?.data || imageUrl
+}
+
 async function handleAI(req, env) {
   const {
     mode = 'single',
@@ -287,6 +295,11 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
 
   const prompt = mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
 
+  // Resolve Worker image URLs to data URLs so external APIs can fetch them
+  const resolvedImages = await Promise.all(
+    prompt.imageUrls.map(url => resolveImageUrl(url, env))
+  )
+
   try {
     let result = ''
 
@@ -294,7 +307,7 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
       if (!apiKey) return '缺少接口密钥，请在设置中填写。'
       const content = [
         { type: 'text', text: `${prompt.systemPrompt}\n\n${prompt.userPrompt}` },
-        ...prompt.imageUrls.map(url => ({ type: 'image_url', image_url: { url } })),
+        ...resolvedImages.map(url => ({ type: 'image_url', image_url: { url } })),
       ]
       const res = await fetch(apiUrl, {
         method: 'POST',
