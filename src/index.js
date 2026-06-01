@@ -294,42 +294,54 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
   }
 
   function buildTextExplosionPrompt() {
-    const systemPrompt = `你是一名资深 UI 设计分析师。用户会用文字描述一个让他印象深刻的设计、界面、或产品体验。请根据描述拆解出设计因子。`
+    const systemPrompt = `你是一名资深 UI 设计分析师。用户会用文字描述一个让他印象深刻的设计、界面、或产品体验。请根据描述拆解出极其具体的设计因子——必须包含可直接写入 CSS 的数值，禁止模糊形容词。`
     const userPrompt = `用户描述：
 "${context || ''}"
 
-请根据这段文字描述，提取 10-14 个设计因子。尽量只返回 JSON 数组，不要长段落。
+请根据这段文字描述，提取 14-18 个**极其具体**的设计因子。要求：
+- 色彩类：具体十六进制色号（如 #1A1A2E），说明用在哪个元素上
+- 字体类：字体族名、字号（px）、字重、行高、字间距
+- 结构类：间距（px）、圆角（px）、栅格、最大宽度
+- 质感类：具体 CSS 值 — box-shadow、backdrop-filter、渐变色值
+- 组件类：组件尺寸、颜色、圆角、间距的具体数值
+- 动效类：缓动函数、时长、动画属性
+- 高级感类：具体实现手法而非抽象感受
+
+禁止"简洁""现代""高级""优雅"等模糊词。每条必须可直接写 CSS。
+
+尽量只返回 JSON 数组，不要长段落。
 格式：
 [
-  {"category":"色彩","label":"冷白背景","reason":"背景干净，降低视觉噪音","prompt":"使用冷白或低饱和浅色背景承载页面，避免脏灰。"},
-  {"category":"结构","label":"宽松留白","reason":"空间感强，内容更高级","prompt":"在主要内容、卡片和操作区之间保留充足留白。"}
+  {"category":"色彩","label":"深灰主文字 #1A1A2E","reason":"正文用深灰而非纯黑，降低对比度疲劳","prompt":"正文颜色 color: #1A1A2E，标题 #111111，次要信息 #8C8C8C。"},
+  {"category":"质感","label":"8px柔光投影","reason":"卡片浮起感来自低扩散阴影","prompt":"box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04); border-radius: 16px。"}
 ]
 category 只能是：色彩、结构、组件、质感、字体、动效、高级感。
-label 必须 2-8 个中文词，适合显示在小气泡里。
-prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实现指令。
-即使用户的描述比较抽象（如"整体色调好"、"层次感好"），也要尽量拆解成具体的可执行因子。`
+label 必须 2-8 个中文词（色彩类带色号、字体类带参数），适合显示在小气泡里。
+prompt 必须是可直接复制为 CSS/代码的实现指令，包含具体数值。
+即使描述抽象，也必须推断出具体数值。`
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
   function buildVideoExplosionPrompt() {
-    const systemPrompt = `你是一名资深交互与动效设计分析师。用户提供了一段界面录屏的关键帧截图，请重点分析其中的动效、转场、交互反馈和视觉节奏。`
-    const userPrompt = `${context ? `用户补充说明："${context}"\n\n` : ''}以下是从一段界面录屏中提取的关键帧。请重点分析：
-- 页面之间的转场方式（滑动、淡入、缩放…）
-- 元素的出现/消失动画
-- 交互反馈（点击、滑动、长按的视觉响应）
-- 动效的节奏感（快慢、缓动曲线的感觉）
-- 整体的动态氛围
+    const systemPrompt = `你是一名资深交互与动效设计分析师。用户提供了一段界面录屏的关键帧截图，请拆解出极其具体的设计因子——每条必须包含可直接写入 CSS/JS 的数值，禁止模糊形容词。`
+    const userPrompt = `${context ? `用户补充说明："${context}"\n\n` : ''}以下是从一段界面录屏中提取的关键帧。请提取 14-18 个**极其具体**的因子，重点关注动效和质感：
+- 转场：具体 CSS transition/animation 属性、时长（ms）、缓动函数（cubic-bezier 值）
+- 动画：具体 keyframes、transform 值、opacity 变化范围
+- 交互反馈：hover/active/focus 的具体样式变化（scale 值、颜色变化、阴影变化）
+- 视觉节奏：具体延迟间隔（stagger delay）、动画编排顺序
+- 色彩/质感：具体十六进制色号、backdrop-filter 值、box-shadow 值、渐变色值
 
-请拆解为 10-14 个设计因子。尽量只返回 JSON 数组，不要长段落。
+禁止"流畅""自然""优雅"等模糊词。每条必须可直接写 CSS/JS。
+
+尽量只返回 JSON 数组，不要长段落。
 格式：
 [
-  {"category":"动效","label":"弹性缓入转场","reason":"页面切换有弹性回弹感，增加活力","prompt":"页面切换使用 spring easing（如 cubic-bezier(0.34, 1.56, 0.64, 1)），让转场有弹性回弹感。"},
-  {"category":"质感","label":"毛玻璃层叠","reason":"多层半透明叠加营造深度","prompt":"使用 backdrop-filter: blur(20px) 配合半透明背景色实现毛玻璃效果。"}
+  {"category":"动效","label":"300ms弹性页面转场","reason":"页面切换有弹性回弹感","prompt":"transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1); 页面进入时 translateX(100%) → translateX(0)。"},
+  {"category":"质感","label":"20px毛玻璃 rgba(255,255,255,0.72)","reason":"多层半透明叠加营造深度","prompt":"backdrop-filter: blur(20px) saturate(1.2); background: rgba(255,255,255,0.72); border: 1px solid rgba(255,255,255,0.3)。"}
 ]
 category 只能是：色彩、结构、组件、质感、字体、动效、高级感。
-label 必须 2-8 个中文词，适合显示在小气泡里。
-prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实现指令。
-请特别关注「动效」和「质感」类目，因为用户提供的是录屏而非静态截图。`
+label 必须 2-8 个中文词（带关键数值），适合显示在小气泡里。
+prompt 必须是可直接复制为 CSS/JS 代码的实现指令。`
     const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
     return { systemPrompt, userPrompt, imageUrls }
   }
