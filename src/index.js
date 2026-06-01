@@ -371,7 +371,8 @@ prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实�
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: 'user', content }],
-          max_tokens: mode === 'group' ? 1800 : 1024
+          max_tokens: mode === 'group' ? 2048 : 1024,
+          enable_thinking: false,
         })
       })
       const data = await res.json().catch(() => ({}))
