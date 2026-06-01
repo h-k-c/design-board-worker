@@ -293,7 +293,61 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
     return { systemPrompt, userPrompt, imageUrls }
   }
 
-  const prompt = mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
+  function buildTextExplosionPrompt() {
+    const systemPrompt = `你是一名资深 UI 设计分析师。用户会用文字描述一个让他印象深刻的设计、界面、或产品体验。请根据描述拆解出设计因子。`
+    const userPrompt = `用户描述：
+"${context || ''}"
+
+请根据这段文字描述，提取 10-14 个设计因子。尽量只返回 JSON 数组，不要长段落。
+格式：
+[
+  {"category":"色彩","label":"冷白背景","reason":"背景干净，降低视觉噪音","prompt":"使用冷白或低饱和浅色背景承载页面，避免脏灰。"},
+  {"category":"结构","label":"宽松留白","reason":"空间感强，内容更高级","prompt":"在主要内容、卡片和操作区之间保留充足留白。"}
+]
+category 只能是：色彩、结构、组件、质感、字体、动效、高级感。
+label 必须 2-8 个中文词，适合显示在小气泡里。
+prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实现指令。
+即使用户的描述比较抽象（如"整体色调好"、"层次感好"），也要尽量拆解成具体的可执行因子。`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  function buildVideoExplosionPrompt() {
+    const systemPrompt = `你是一名资深交互与动效设计分析师。用户提供了一段界面录屏的关键帧截图，请重点分析其中的动效、转场、交互反馈和视觉节奏。`
+    const userPrompt = `${context ? `用户补充说明："${context}"\n\n` : ''}以下是从一段界面录屏中提取的关键帧。请重点分析：
+- 页面之间的转场方式（滑动、淡入、缩放…）
+- 元素的出现/消失动画
+- 交互反馈（点击、滑动、长按的视觉响应）
+- 动效的节奏感（快慢、缓动曲线的感觉）
+- 整体的动态氛围
+
+请拆解为 10-14 个设计因子。尽量只返回 JSON 数组，不要长段落。
+格式：
+[
+  {"category":"动效","label":"弹性缓入转场","reason":"页面切换有弹性回弹感，增加活力","prompt":"页面切换使用 spring easing（如 cubic-bezier(0.34, 1.56, 0.64, 1)），让转场有弹性回弹感。"},
+  {"category":"质感","label":"毛玻璃层叠","reason":"多层半透明叠加营造深度","prompt":"使用 backdrop-filter: blur(20px) 配合半透明背景色实现毛玻璃效果。"}
+]
+category 只能是：色彩、结构、组件、质感、字体、动效、高级感。
+label 必须 2-8 个中文词，适合显示在小气泡里。
+prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实现指令。
+请特别关注「动效」和「质感」类目，因为用户提供的是录屏而非静态截图。`
+    const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
+    return { systemPrompt, userPrompt, imageUrls }
+  }
+
+  const prompt = mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
+
+  // Determine if this task needs a vision model or pure LLM
+  const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
+
+  // Default models per provider — auto-select VL vs LLM
+  const MODEL_DEFAULTS = {
+    modelscope: { vl: 'Qwen/Qwen3-VL-235B-A22B-Instruct', llm: 'Qwen/Qwen3-235B-A22B' },
+    qwen:       { vl: 'qwen-vl-max',                    llm: 'qwen-max' },
+    deepseek:   { vl: 'deepseek-chat',                   llm: 'deepseek-chat' },
+    zhipu:      { vl: 'glm-4v',                          llm: 'glm-4-plus' },
+  }
+  const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
+  const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
 
   // Resolve Worker image URLs to data URLs so external APIs can fetch them
   const resolvedImages = await Promise.all(
@@ -307,7 +361,7 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
       if (!apiKey) return '缺少接口密钥，请在设置中填写。'
       const content = [
         { type: 'text', text: `${prompt.systemPrompt}\n\n${prompt.userPrompt}` },
-        ...resolvedImages.map(url => ({ type: 'image_url', image_url: { url } })),
+        ...(needsVision ? resolvedImages.map(url => ({ type: 'image_url', image_url: { url } })) : []),
       ]
       const res = await fetch(apiUrl, {
         method: 'POST',
@@ -337,21 +391,21 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
       result = await callOpenAICompat(
         'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
         key,
-        model || 'qwen-vl-max'
+        resolvedModel
       )
     } else if (provider === 'deepseek') {
       const key = apiKey || env.DEEPSEEK_API_KEY
       result = await callOpenAICompat(
         'https://api.deepseek.com/v1/chat/completions',
         key,
-        model || 'deepseek-chat'
+        resolvedModel
       )
     } else if (provider === 'zhipu') {
       const key = apiKey || env.ZHIPU_API_KEY
       result = await callOpenAICompat(
         'https://open.bigmodel.cn/api/paas/v4/chat/completions',
         key,
-        model || 'glm-4v'
+        resolvedModel
       )
     } else if (provider === 'modelscope') {
       const key = apiKey || env.MODELSCOPE_API_KEY
@@ -359,7 +413,7 @@ ${analysisText ? `已有单图分析：\n${analysisText}` : ''}
       result = await callOpenAICompat(
         `${apiBase}/chat/completions`,
         key,
-        model || 'Qwen/Qwen3-VL-8B-Instruct'
+        resolvedModel
       )
     } else if (provider === 'lmstudio') {
       const baseUrl = lmstudioUrl || 'http://localhost:1234'
