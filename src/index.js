@@ -334,7 +334,15 @@ prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实�
     return { systemPrompt, userPrompt, imageUrls }
   }
 
-  const prompt = mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
+  function buildPolishPrompt() {
+    return {
+      systemPrompt: '你是一名资深设计文案编辑。请润色用户提供的文案，保留原始结构和内容，让表达更流畅自然。',
+      userPrompt: context || '',
+      imageUrls: [],
+    }
+  }
+
+  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
