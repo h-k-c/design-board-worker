@@ -379,20 +379,41 @@ prompt 是这个因子给 Codex/Claude Code 生成 UI 时可直接使用的实�
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: 'user', content }],
-          max_tokens: mode === 'group' ? 2048 : 1024,
+          max_tokens: mode === 'group' || mode === 'polish' ? 2048 : 1024,
+          stream: true,
           enable_thinking: false,
         })
       })
-      const data = await res.json().catch(() => ({}))
-      console.log(`[AI] ${apiUrl} status=${res.status}`)
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
         const errMsg = data.error?.message || data.error?.code || data.message || `HTTP ${res.status}`
         return `AI 请求失败: ${errMsg}`
       }
-      const text = data.choices?.[0]?.message?.content
+      // Parse SSE stream and collect content chunks
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const payload = line.slice(6).trim()
+          if (payload === '[DONE]') continue
+          try {
+            const chunk = JSON.parse(payload)
+            const delta = chunk.choices?.[0]?.delta?.content
+            if (delta) text += delta
+          } catch {}
+        }
+      }
       if (!text) {
-        console.log(`[AI] Empty response: ${JSON.stringify(data).slice(0, 300)}`)
-        return `AI 返回为空: ${JSON.stringify(data).slice(0, 200)}`
+        console.log(`[AI] Empty streamed response from ${modelName}`)
+        return 'AI 返回为空，请检查模型是否可用。'
       }
       return text
     }
