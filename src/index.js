@@ -346,6 +346,32 @@ prompt 必须是可直接复制为 CSS/JS 代码的实现指令。`
     return { systemPrompt, userPrompt, imageUrls }
   }
 
+  function buildDesignExplosionPrompt() {
+    const systemPrompt = `你是一名资深 UI 设计分析师。请把图片拆解成极其具体的设计因子，每条必须包含可直接写入 CSS 的数值，禁止模糊形容词。`
+    const userPrompt = `${context ? `用户补充说明："${context}"\n\n` : ''}请把这个素材拆成 14-18 个**极其具体**的设计因子。要求：
+- 色彩类：具体十六进制色号（如 #1A1A2E、#E8E3D9），说明用在哪里（背景/文字/强调/边框），给出主色、辅色、点缀色
+- 字体类：字体族名（如 SF Pro、思源黑体）、字号（如 14px/28px）、字重（如 400/600/700）、行高（如 1.5）、字间距（如 0.02em）
+- 结构类：间距（如 padding 16px 20px）、圆角（如 border-radius 16px）、栅格列数、内容最大宽度
+- 质感类：具体 CSS 值 — 阴影（如 box-shadow: 0 4px 24px rgba(0,0,0,0.08)）、模糊度、透明度、渐变方向和色值
+- 组件类：按钮尺寸/圆角/颜色、卡片间距/边框、导航高度/布局
+- 动效类：缓动函数（如 cubic-bezier(0.4, 0, 0.2, 1)）、时长（如 200ms）、属性（transform/opacity）
+- 高级感类：具体实现手法而非抽象感受
+
+禁止使用"简洁"、"现代"、"高级"、"优雅"等模糊形容词。每个因子必须具体到可以直接写 CSS。
+
+只返回 JSON 数组，不要其他文字。
+格式：
+[
+  {"category":"色彩","label":"深灰主文字 #1A1A2E","reason":"正文用深灰而非纯黑，降低对比度疲劳","prompt":"正文颜色 color: #1A1A2E，标题 #111111，次要信息 #8C8C8C。"},
+  {"category":"字体","label":"SF Pro 16/24 W500","reason":"正文 16px 配 1.5 行高，medium 字重保证可读性","prompt":"font-family: 'SF Pro Display', -apple-system; font-size: 16px; line-height: 24px; font-weight: 500。"},
+  {"category":"质感","label":"8px柔光投影","reason":"卡片浮起感来自低扩散阴影","prompt":"box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.04); border-radius: 16px。"}
+]
+category 只能是：色彩、结构、组件、质感、字体、动效、高级感。
+label 必须 2-8 个中文词（色彩类带色号、字体类带参数），适合显示在小气泡里。
+prompt 必须是可直接复制为 CSS/代码的实现指令，包含具体数值。`
+    return { systemPrompt, userPrompt, imageUrls: imageUrl ? [imageUrl] : [] }
+  }
+
   function buildPolishPrompt() {
     return {
       systemPrompt: '你是一名资深设计文案编辑。请润色用户提供的文案，保留原始结构和内容，让表达更流畅自然。',
@@ -354,7 +380,7 @@ prompt 必须是可直接复制为 CSS/JS 代码的实现指令。`
     }
   }
 
-  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
+  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
@@ -385,16 +411,22 @@ prompt 必须是可直接复制为 CSS/JS 代码的实现指令。`
             ...resolvedImages.map(url => ({ type: 'image_url', image_url: { url } })),
           ]
         : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
+      // Explosion modes return JSON arrays — force JSON output format
+      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion'].includes(mode)
+      const body = {
+        model: modelName,
+        messages: [{ role: 'user', content }],
+        max_tokens: wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        stream: true,
+        enable_thinking: false,
+      }
+      if (wantsJson) {
+        body.response_format = { type: 'json_object' }
+      }
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: modelName,
-          messages: [{ role: 'user', content }],
-          max_tokens: mode === 'group' || mode === 'polish' ? 2048 : 1024,
-          stream: true,
-          enable_thinking: false,
-        })
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
