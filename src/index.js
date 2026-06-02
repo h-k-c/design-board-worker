@@ -70,6 +70,72 @@ async function hashPassword(salt, password) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+function parseDataUrl(data) {
+  const match = String(data || '').match(/^data:([^;,]+)?;base64,([\s\S]+)$/)
+  if (!match) return null
+  const binary = atob(match[2])
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return { contentType: match[1] || 'application/octet-stream', bytes }
+}
+
+function bytesToBase64(bytes) {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize))
+  }
+  return btoa(binary)
+}
+
+function extForContentType(contentType = '') {
+  const type = contentType.toLowerCase().split(';')[0]
+  if (type === 'image/jpeg' || type === 'image/jpg') return 'jpg'
+  if (type === 'image/png') return 'png'
+  if (type === 'image/webp') return 'webp'
+  if (type === 'image/gif') return 'gif'
+  if (type === 'image/svg+xml') return 'svg'
+  return 'bin'
+}
+
+function publicAssetBase(env) {
+  return (env.ASSET_PUBLIC_BASE_URL || '').replace(/\/+$/, '')
+}
+
+function assetPublicUrl(env, key, id) {
+  const base = publicAssetBase(env)
+  if (!base) return `/api/assets/${id}`
+  return `${base}/${key.split('/').map(encodeURIComponent).join('/')}`
+}
+
+function keyFromPublicUrl(imageUrl, env) {
+  const base = publicAssetBase(env)
+  if (!base || !imageUrl.startsWith(`${base}/`)) return ''
+  return decodeURIComponent(imageUrl.slice(base.length + 1))
+}
+
+function dataUrlFromBytes(bytes, contentType) {
+  return `data:${contentType || 'application/octet-stream'};base64,${bytesToBase64(bytes)}`
+}
+
+async function getAssetById(env, id) {
+  if (!env.DB || !id) return null
+  try {
+    return await env.DB.prepare(
+      'SELECT r2_key, public_url, content_type FROM assets WHERE id = ? AND deleted_at IS NULL'
+    ).bind(id).first()
+  } catch {
+    return null
+  }
+}
+
+async function r2ObjectToDataUrl(object) {
+  if (!object) return ''
+  const bytes = new Uint8Array(await object.arrayBuffer())
+  const contentType = object.httpMetadata?.contentType || object.customMetadata?.contentType || 'application/octet-stream'
+  return dataUrlFromBytes(bytes, contentType)
+}
+
 // ── Route handlers ──
 
 async function handleLogin(req, env) {
@@ -161,36 +227,105 @@ async function handleUpload(req, env) {
   if (!data) return json({ error: '没有收到图片数据' }, 400)
 
   const id = crypto.randomUUID()
+  const parsed = parseDataUrl(data)
+  if (!parsed) return json({ error: '图片格式无效' }, 400)
+  const resolvedContentType = contentType || parsed.contentType || 'image/jpeg'
+
+  if (env.ASSETS) {
+    const ext = extForContentType(resolvedContentType)
+    const date = new Date()
+    const objectKey = `images/${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${id}.${ext}`
+    const publicUrl = assetPublicUrl(env, objectKey, id)
+
+    await env.ASSETS.put(objectKey, parsed.bytes, {
+      httpMetadata: { contentType: resolvedContentType },
+      customMetadata: {
+        assetId: id,
+        filename: filename || '',
+        contentType: resolvedContentType,
+      },
+    })
+
+    try {
+      await env.DB.prepare(
+        `INSERT INTO assets (id, r2_key, public_url, filename, content_type, size, created_at)
+         VALUES (?,?,?,?,?,?,datetime('now'))`
+      ).bind(id, objectKey, publicUrl, filename || '', resolvedContentType, parsed.bytes.length).run()
+    } catch {}
+
+    return json({
+      url: publicUrl,
+      publicUrl,
+      assetId: id,
+      imageKey: objectKey,
+      key: objectKey,
+      storage: 'r2',
+      contentType: resolvedContentType,
+      size: parsed.bytes.length,
+    })
+  }
 
   await env.DB.prepare(
     'INSERT INTO images (id, data, filename, content_type) VALUES (?,?,?,?)'
-  ).bind(id, data, filename, contentType || 'image/jpeg').run()
+  ).bind(id, data, filename, resolvedContentType).run()
 
-  return json({ url: `/api/images/${id}` })
+  return json({ url: `/api/images/${id}`, storage: 'd1', contentType: resolvedContentType })
 }
 
 async function handleGetImage(req, env, id) {
   const row = await env.DB.prepare('SELECT data, content_type FROM images WHERE id = ?').bind(id).first()
   if (!row) return new Response('未找到图片', { status: 404, headers: CORS })
 
-  const match = row.data.match(/^data:(.+?);base64,(.+)$/)
-  if (!match) return new Response('图片格式无效', { status: 400, headers: CORS })
+  const parsed = parseDataUrl(row.data)
+  if (!parsed) return new Response('图片格式无效', { status: 400, headers: CORS })
 
-  const binaryStr = atob(match[2])
-  const bytes = new Uint8Array(binaryStr.length)
-  for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i)
+  return new Response(parsed.bytes, {
+    headers: { 'Content-Type': row.content_type || parsed.contentType, ...CORS }
+  })
+}
 
-  return new Response(bytes, {
-    headers: { 'Content-Type': row.content_type || match[1], ...CORS }
+async function handleGetAsset(req, env, id) {
+  const row = await getAssetById(env, id)
+  if (!row || !env.ASSETS) return new Response('未找到图片', { status: 404, headers: CORS })
+
+  const object = await env.ASSETS.get(row.r2_key)
+  if (!object) return new Response('未找到图片', { status: 404, headers: CORS })
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': object.httpMetadata?.contentType || row.content_type || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      ...CORS,
+    }
   })
 }
 
 // Resolve Worker image URLs to data URLs so external APIs can access them
 async function resolveImageUrl(imageUrl, env) {
+  if (!imageUrl) return imageUrl
+
+  const assetRouteMatch = imageUrl.match(/\/api\/assets\/([^/?#]+)/)
+  if (assetRouteMatch) {
+    const asset = await getAssetById(env, assetRouteMatch[1])
+    if (asset && env.ASSETS) {
+      const object = await env.ASSETS.get(asset.r2_key)
+      return await r2ObjectToDataUrl(object) || imageUrl
+    }
+  }
+
+  const publicKey = keyFromPublicUrl(imageUrl, env)
+  if (publicKey && env.ASSETS) {
+    const object = await env.ASSETS.get(publicKey)
+    return await r2ObjectToDataUrl(object) || imageUrl
+  }
+
   const match = imageUrl.match(/\/api\/images\/([^/?#]+)/)
-  if (!match) return imageUrl
-  const row = await env.DB.prepare('SELECT data FROM images WHERE id = ?').bind(match[1]).first()
-  return row?.data || imageUrl
+  if (match) {
+    const row = await env.DB.prepare('SELECT data FROM images WHERE id = ?').bind(match[1]).first()
+    return row?.data || imageUrl
+  }
+
+  return imageUrl
 }
 
 async function handleAI(req, env) {
@@ -546,6 +681,11 @@ export default {
     if (path.startsWith('/api/images/') && req.method === 'GET') {
       const id = path.slice('/api/images/'.length)
       return handleGetImage(req, env, id)
+    }
+
+    if (path.startsWith('/api/assets/') && req.method === 'GET') {
+      const id = path.slice('/api/assets/'.length)
+      return handleGetAsset(req, env, id)
     }
 
     // Protected routes
