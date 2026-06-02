@@ -12,7 +12,7 @@ binding = "ASSETS"
 bucket_name = "design-board-assets"
 
 [vars]
-ASSET_PUBLIC_BASE_URL = ""
+ASSET_PUBLIC_BASE_URL = "https://pub-59e2bb104e19441ca52f49358bf5f234.r2.dev"
 # Override via `wrangler secret put` or dashboard
 # MODELSCOPE_API_KEY, QWEN_API_KEY, DEEPSEEK_API_KEY, ZHIPU_API_KEY
 
@@ -20,7 +20,7 @@ ASSET_PUBLIC_BASE_URL = ""
 # Production specific config
 
 [env.production.vars]
-ASSET_PUBLIC_BASE_URL = ""
+ASSET_PUBLIC_BASE_URL = "https://pub-59e2bb104e19441ca52f49358bf5f234.r2.dev"
 
 [[env.production.d1_databases]]
 binding = "DB"
