@@ -235,6 +235,204 @@ async function handleCleanupAssets(req, env) {
   return json(result, result.ok ? 200 : 500)
 }
 
+// ── Generated pages (Phase 2 durable persistence) ──
+
+function versionR2Keys(groupId, pageId, versionNo) {
+  const prefix = `generated/${groupId}/${pageId}/v${versionNo}`
+  return {
+    html: `${prefix}/index.html`,
+    css: `${prefix}/styles.css`,
+    js: `${prefix}/script.js`,
+  }
+}
+
+async function handleCreateGroup(req, env) {
+  const body = await req.json().catch(() => ({}))
+  const { cardId, title, promptCardId } = body
+  const id = crypto.randomUUID()
+  try {
+    await env.DB.prepare(
+      `INSERT INTO generated_page_groups (id, card_id, title, prompt_card_id)
+       VALUES (?,?,?,?)`
+    ).bind(id, cardId || null, title || null, promptCardId || null).run()
+    return json({ id })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function handleCreatePage(req, env) {
+  const body = await req.json().catch(() => ({}))
+  const { groupId, slug, title, routePath, sortOrder, parentPageId } = body
+  if (!groupId) return json({ error: 'groupId is required' }, 400)
+  const id = crypto.randomUUID()
+  try {
+    await env.DB.prepare(
+      `INSERT INTO generated_pages (id, group_id, slug, title, route_path, sort_order, parent_page_id)
+       VALUES (?,?,?,?,?,?,?)`
+    ).bind(id, groupId, slug || null, title || null, routePath || null, Number(sortOrder) || 0, parentPageId || null).run()
+    return json({ id })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function handleCreateVersion(req, env) {
+  if (!env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
+  const body = await req.json().catch(() => ({}))
+  const { pageId, html, css, js, sourcePrompt, editInstruction, summary } = body
+  if (!pageId) return json({ error: 'pageId is required' }, 400)
+
+  try {
+    const page = await env.DB.prepare(
+      'SELECT group_id, current_version_id FROM generated_pages WHERE id = ?'
+    ).bind(pageId).first()
+    if (!page) return json({ error: 'Page not found' }, 404)
+    const groupId = page.group_id
+
+    const maxRow = await env.DB.prepare(
+      'SELECT MAX(version_no) AS max_no FROM generated_page_versions WHERE page_id = ?'
+    ).bind(pageId).first()
+    const versionNo = (Number(maxRow?.max_no) || 0) + 1
+
+    const keys = versionR2Keys(groupId, pageId, versionNo)
+    await env.ASSETS.put(keys.html, html || '', { httpMetadata: { contentType: 'text/html; charset=utf-8' } })
+    await env.ASSETS.put(keys.css, css || '', { httpMetadata: { contentType: 'text/css; charset=utf-8' } })
+    await env.ASSETS.put(keys.js, js || '', { httpMetadata: { contentType: 'text/javascript; charset=utf-8' } })
+
+    const versionId = crypto.randomUUID()
+    await env.DB.prepare(
+      `INSERT INTO generated_page_versions
+        (id, page_id, version_no, source_prompt, edit_instruction, html_r2_key, css_r2_key, js_r2_key, summary, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`
+    ).bind(
+      versionId, pageId, versionNo, sourcePrompt || null, editInstruction || null,
+      keys.html, keys.css, keys.js, summary || null, null
+    ).run()
+
+    await env.DB.prepare(
+      "UPDATE generated_pages SET current_version_id = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(versionId, pageId).run()
+
+    await env.DB.prepare(
+      `INSERT INTO page_edit_events (id, page_id, from_version_id, to_version_id, operation, instruction)
+       VALUES (?,?,?,?,?,?)`
+    ).bind(
+      crypto.randomUUID(), pageId, page.current_version_id || null, versionId,
+      editInstruction ? 'edit' : 'create', editInstruction || null
+    ).run()
+
+    return json({ versionId, versionNo })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function handleGetVersionContent(req, env, id) {
+  if (!env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
+  try {
+    const row = await env.DB.prepare(
+      'SELECT html_r2_key, css_r2_key, js_r2_key FROM generated_page_versions WHERE id = ?'
+    ).bind(id).first()
+    if (!row) return json({ error: 'Version not found' }, 404)
+
+    async function readKey(key) {
+      if (!key) return ''
+      const object = await env.ASSETS.get(key)
+      if (!object) return ''
+      return await object.text()
+    }
+
+    const [html, css, js] = await Promise.all([
+      readKey(row.html_r2_key),
+      readKey(row.css_r2_key),
+      readKey(row.js_r2_key),
+    ])
+    return json({ html, css, js })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function handleGetPageVersions(req, env, id) {
+  try {
+    const rows = await env.DB.prepare(
+      `SELECT id, version_no, summary, created_at FROM generated_page_versions
+       WHERE page_id = ? ORDER BY version_no DESC`
+    ).bind(id).all()
+    const versions = (rows.results || []).map(r => ({
+      id: r.id,
+      versionNo: r.version_no,
+      summary: r.summary,
+      createdAt: r.created_at,
+    }))
+    return json({ versions })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function handleDeleteGroup(req, env, id) {
+  try {
+    await env.DB.prepare(
+      "UPDATE generated_page_groups SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+    ).bind(id).run()
+    await env.DB.prepare(
+      "UPDATE generated_pages SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE group_id = ?"
+    ).bind(id).run()
+    return json({ ok: true })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
+
+async function cleanupGeneratedPages(env, opts = {}) {
+  if (!env.DB || !env.ASSETS) return { ok: false, error: 'Storage is not configured' }
+
+  const olderThanDays = Math.max(1, Math.min(365, Number(opts.olderThanDays) || 7))
+  const limit = Math.max(1, Math.min(500, Number(opts.limit) || 50))
+  const cutoff = `-${olderThanDays} days`
+
+  const groups = await env.DB.prepare(
+    "SELECT id FROM generated_page_groups WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', ?) LIMIT ?"
+  ).bind(cutoff, limit).all()
+
+  const candidates = groups.results || []
+  const deletedGroups = []
+  const failed = []
+
+  for (const group of candidates) {
+    try {
+      const pages = await env.DB.prepare(
+        'SELECT id FROM generated_pages WHERE group_id = ?'
+      ).bind(group.id).all()
+
+      for (const page of pages.results || []) {
+        const versions = await env.DB.prepare(
+          'SELECT html_r2_key, css_r2_key, js_r2_key FROM generated_page_versions WHERE page_id = ?'
+        ).bind(page.id).all()
+
+        for (const v of versions.results || []) {
+          for (const key of [v.html_r2_key, v.css_r2_key, v.js_r2_key]) {
+            if (key) await env.ASSETS.delete(key)
+          }
+        }
+
+        await env.DB.prepare('DELETE FROM generated_page_versions WHERE page_id = ?').bind(page.id).run()
+        await env.DB.prepare('DELETE FROM page_edit_events WHERE page_id = ?').bind(page.id).run()
+      }
+
+      await env.DB.prepare('DELETE FROM generated_pages WHERE group_id = ?').bind(group.id).run()
+      await env.DB.prepare('DELETE FROM generated_page_groups WHERE id = ?').bind(group.id).run()
+      deletedGroups.push(group.id)
+    } catch (e) {
+      failed.push({ id: group.id, error: e.message })
+    }
+  }
+
+  return { ok: failed.length === 0, deletedGroups, failed }
+}
+
 // ── Route handlers ──
 
 async function handleLogin(req, env) {
@@ -931,6 +1129,11 @@ export default {
         .then(result => console.log('[assets.cleanup]', JSON.stringify(result)))
         .catch(error => console.log('[assets.cleanup] failed', error.message))
     )
+    ctx.waitUntil(
+      cleanupGeneratedPages(env, { olderThanDays: 7, limit: 500 })
+        .then(result => console.log('[generated.cleanup]', JSON.stringify(result)))
+        .catch(error => console.log('[generated.cleanup] failed', error.message))
+    )
   },
 
   async fetch(req, env) {
@@ -963,6 +1166,23 @@ export default {
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env)
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env)
+
+    // Generated pages (Phase 2 durable persistence)
+    if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env)
+    if (path === '/api/generated/pages' && req.method === 'POST') return handleCreatePage(req, env)
+    if (path === '/api/generated/versions' && req.method === 'POST') return handleCreateVersion(req, env)
+
+    let m
+    if ((m = path.match(/^\/api\/generated\/versions\/([^/]+)\/content$/)) && req.method === 'GET') {
+      return handleGetVersionContent(req, env, m[1])
+    }
+    if ((m = path.match(/^\/api\/generated\/pages\/([^/]+)\/versions$/)) && req.method === 'GET') {
+      return handleGetPageVersions(req, env, m[1])
+    }
+    if ((m = path.match(/^\/api\/generated\/groups\/([^/]+)$/)) && req.method === 'DELETE') {
+      return handleDeleteGroup(req, env, m[1])
+    }
+
     return json({ error: '未找到接口' }, 404)
   }
 }
