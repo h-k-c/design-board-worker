@@ -136,6 +136,81 @@ async function r2ObjectToDataUrl(object) {
   return dataUrlFromBytes(bytes, contentType)
 }
 
+function collectAssetRefs(value, env, refs = { ids: new Set(), keys: new Set(), urls: new Set() }) {
+  if (!value) return refs
+  if (Array.isArray(value)) {
+    for (const item of value) collectAssetRefs(item, env, refs)
+    return refs
+  }
+  if (typeof value !== 'object') return refs
+
+  if (typeof value.assetId === 'string' && value.assetId) refs.ids.add(value.assetId)
+  if (typeof value.imageKey === 'string' && value.imageKey) refs.keys.add(value.imageKey)
+  if (typeof value.publicUrl === 'string' && value.publicUrl) refs.urls.add(value.publicUrl)
+
+  if (typeof value.imageUrl === 'string' && value.imageUrl) {
+    refs.urls.add(value.imageUrl)
+    const assetRouteMatch = value.imageUrl.match(/\/api\/assets\/([^/?#]+)/)
+    if (assetRouteMatch) refs.ids.add(assetRouteMatch[1])
+    const publicKey = keyFromPublicUrl(value.imageUrl, env)
+    if (publicKey) refs.keys.add(publicKey)
+  }
+
+  for (const item of Object.values(value)) collectAssetRefs(item, env, refs)
+  return refs
+}
+
+async function syncAssetReferences(cards, env) {
+  if (!env.DB) return
+  let rows
+  try {
+    rows = await env.DB.prepare('SELECT id, r2_key, public_url, deleted_at FROM assets').all()
+  } catch {
+    return
+  }
+
+  const refs = collectAssetRefs(cards, env)
+  for (const asset of rows.results || []) {
+    const referenced = refs.ids.has(asset.id) || refs.keys.has(asset.r2_key) || refs.urls.has(asset.public_url)
+    if (referenced && asset.deleted_at) {
+      await env.DB.prepare('UPDATE assets SET deleted_at = NULL WHERE id = ?').bind(asset.id).run()
+    } else if (!referenced && !asset.deleted_at) {
+      await env.DB.prepare("UPDATE assets SET deleted_at = datetime('now') WHERE id = ?").bind(asset.id).run()
+    }
+  }
+}
+
+async function handleCleanupAssets(req, env) {
+  if (!env.DB || !env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
+
+  const body = await req.json().catch(() => ({}))
+  const olderThanDays = Math.max(1, Math.min(365, Number(body.olderThanDays) || 7))
+  const limit = Math.max(1, Math.min(500, Number(body.limit) || 50))
+  const dryRun = body.dryRun === true
+  const cutoff = `-${olderThanDays} days`
+
+  const rows = await env.DB.prepare(
+    "SELECT id, r2_key, public_url, deleted_at FROM assets WHERE deleted_at IS NOT NULL AND deleted_at < datetime('now', ?) LIMIT ?"
+  ).bind(cutoff, limit).all()
+
+  const candidates = rows.results || []
+  if (dryRun) return json({ ok: true, dryRun, count: candidates.length, assets: candidates })
+
+  const deleted = []
+  const failed = []
+  for (const asset of candidates) {
+    try {
+      await env.ASSETS.delete(asset.r2_key)
+      await env.DB.prepare('DELETE FROM assets WHERE id = ?').bind(asset.id).run()
+      deleted.push(asset.id)
+    } catch (e) {
+      failed.push({ id: asset.id, error: e.message })
+    }
+  }
+
+  return json({ ok: failed.length === 0, deleted, failed })
+}
+
 // ── Route handlers ──
 
 async function handleLogin(req, env) {
@@ -215,6 +290,8 @@ async function handleSaveBoard(req, env) {
         ).bind(id, type, x, y, w, h, content, linkedTo || null).run()
       }
     }
+
+    await syncAssetReferences(cards, env)
 
     return json({ ok: true })
   } catch (e) {
@@ -695,6 +772,7 @@ export default {
     if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env)
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env)
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env)
+    if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env)
     return json({ error: '未找到接口' }, 404)
   }

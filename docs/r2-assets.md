@@ -73,6 +73,43 @@ Example policy:
     `/api/images/:imageId` into data URLs before sending images to vision
     providers.
 
+## Delete Lifecycle
+
+Asset deletion is intentionally split into two steps:
+
+1. `PUT /api/board` performs synchronous soft deletion.
+   - The Worker scans the saved card JSON, including nested group snapshots, for
+     `assetId`, `imageKey`, `/api/assets/:id`, and configured public R2 URLs.
+   - Any `assets` row that is no longer referenced is marked with `deleted_at`.
+   - If a previously soft-deleted asset becomes referenced again, `deleted_at`
+     is cleared.
+
+2. `POST /api/assets/cleanup` performs delayed hard deletion.
+   - This protected route deletes R2 objects and removes their D1 asset rows
+     only after they have been soft-deleted for a grace period.
+   - Default body:
+
+```json
+{
+  "olderThanDays": 7,
+  "limit": 50,
+  "dryRun": false
+}
+```
+
+Use `dryRun: true` before destructive cleanup:
+
+```sh
+curl -X POST "$WORKER/api/assets/cleanup" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":true}'
+```
+
+The delayed cleanup avoids hard-deleting images during accidental card deletion,
+failed saves, or temporary board states. It also gives group snapshots and future
+undo/restore features a safer window.
+
 ## Old Image Migration
 
 The legacy `images.card_id` relationship is unreliable because current uploads
