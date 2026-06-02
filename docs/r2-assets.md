@@ -110,6 +110,29 @@ The delayed cleanup avoids hard-deleting images during accidental card deletion,
 failed saves, or temporary board states. It also gives group snapshots and future
 undo/restore features a safer window.
 
+The Worker also has a Cron Trigger configured in `wrangler.toml`:
+
+```toml
+[triggers]
+crons = ["0 19 * * *"]
+```
+
+Cloudflare cron expressions use UTC. This runs once per day at 19:00 UTC, which
+is 03:00 in Asia/Shanghai, and deletes assets that have been soft-deleted for at
+least 7 days.
+
+## Saved Settings
+
+`PUT /api/board` stores provider and UI settings in D1 table `app_settings`:
+
+- `provider_settings`: AI provider, API key, model names, base URL, matting URL,
+  and sticker settings.
+- `ui_settings`: sidebar/bottom bar visibility and caption font.
+
+`GET /api/board` returns those settings so another browser can restore them into
+local storage. This fixes the previous behavior where settings were sent by the
+frontend but discarded by the Worker.
+
 ## Old Image Migration
 
 The legacy `images.card_id` relationship is unreliable because current uploads

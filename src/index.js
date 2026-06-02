@@ -136,6 +136,25 @@ async function r2ObjectToDataUrl(object) {
   return dataUrlFromBytes(bytes, contentType)
 }
 
+async function loadJsonSetting(env, key) {
+  if (!env.DB) return null
+  try {
+    const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first()
+    return row?.value ? JSON.parse(row.value) : null
+  } catch {
+    return null
+  }
+}
+
+async function saveJsonSetting(env, key, value) {
+  if (!env.DB || value === undefined) return
+  await env.DB.prepare(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).bind(key, JSON.stringify(value ?? null)).run()
+}
+
 function collectAssetRefs(value, env, refs = { ids: new Set(), keys: new Set(), urls: new Set() }) {
   if (!value) return refs
   if (Array.isArray(value)) {
@@ -180,13 +199,12 @@ async function syncAssetReferences(cards, env) {
   }
 }
 
-async function handleCleanupAssets(req, env) {
-  if (!env.DB || !env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
+async function cleanupAssets(env, opts = {}) {
+  if (!env.DB || !env.ASSETS) return { ok: false, error: 'Asset storage is not configured' }
 
-  const body = await req.json().catch(() => ({}))
-  const olderThanDays = Math.max(1, Math.min(365, Number(body.olderThanDays) || 7))
-  const limit = Math.max(1, Math.min(500, Number(body.limit) || 50))
-  const dryRun = body.dryRun === true
+  const olderThanDays = Math.max(1, Math.min(365, Number(opts.olderThanDays) || 7))
+  const limit = Math.max(1, Math.min(500, Number(opts.limit) || 50))
+  const dryRun = opts.dryRun === true
   const cutoff = `-${olderThanDays} days`
 
   const rows = await env.DB.prepare(
@@ -194,7 +212,7 @@ async function handleCleanupAssets(req, env) {
   ).bind(cutoff, limit).all()
 
   const candidates = rows.results || []
-  if (dryRun) return json({ ok: true, dryRun, count: candidates.length, assets: candidates })
+  if (dryRun) return { ok: true, dryRun, count: candidates.length, assets: candidates }
 
   const deleted = []
   const failed = []
@@ -208,7 +226,13 @@ async function handleCleanupAssets(req, env) {
     }
   }
 
-  return json({ ok: failed.length === 0, deleted, failed })
+  return { ok: failed.length === 0, deleted, failed }
+}
+
+async function handleCleanupAssets(req, env) {
+  const body = await req.json().catch(() => ({}))
+  const result = await cleanupAssets(env, body)
+  return json(result, result.ok ? 200 : 500)
 }
 
 // ── Route handlers ──
@@ -244,6 +268,8 @@ async function handleGetBoard(req, env) {
     const state = await env.DB.prepare('SELECT transform FROM board_state WHERE id = 1').first()
     const cards = await env.DB.prepare('SELECT * FROM cards ORDER BY created_at').all()
     const transform = state ? JSON.parse(state.transform) : { x: 0, y: 0, scale: 1 }
+    const settings = await loadJsonSetting(env, 'provider_settings')
+    const uiSettings = await loadJsonSetting(env, 'ui_settings')
 
     const mapped = cards.results.map(row => {
       const content = JSON.parse(row.content)
@@ -252,18 +278,20 @@ async function handleGetBoard(req, env) {
       return card
     })
 
-    return json({ cards: mapped, transform })
+    return json({ cards: mapped, transform, settings, uiSettings })
   } catch (e) {
     return json({ cards: [], transform: { x: 0, y: 0, scale: 1 } })
   }
 }
 
 async function handleSaveBoard(req, env) {
-  const { cards, transform } = await req.json()
+  const { cards, transform, settings, uiSettings } = await req.json()
 
   try {
     await env.DB.prepare('UPDATE board_state SET transform = ? WHERE id = 1')
       .bind(JSON.stringify(transform)).run()
+    await saveJsonSetting(env, 'provider_settings', settings)
+    await saveJsonSetting(env, 'ui_settings', uiSettings)
 
     const existing = await env.DB.prepare('SELECT id FROM cards').all()
     const existingIds = new Set(existing.results.map(r => r.id))
@@ -744,6 +772,14 @@ prompt 必须是可直接复制为 CSS/代码的实现指令，包含具体数�
 // ── Main ──
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      cleanupAssets(env, { olderThanDays: 7, limit: 500 })
+        .then(result => console.log('[assets.cleanup]', JSON.stringify(result)))
+        .catch(error => console.log('[assets.cleanup] failed', error.message))
+    )
+  },
+
   async fetch(req, env) {
     const url = new URL(req.url)
     const path = url.pathname
