@@ -701,11 +701,11 @@ async function handleAI(req, env) {
   function platformSpec(p) {
     if (p === 'app') return {
       label: 'App 移动端（iOS/Android 原生风格）',
-      rules: '画布按移动端竖屏设计，视口宽度 375–430px；根容器 max-width:430px、margin:0 auto、min-height:100vh；触控友好（点击区 ≥44px）；底部 tabbar / 顶部 navbar 按需要；不要桌面多列布局。',
+      rules: '画布按移动端竖屏设计，视口宽度 390–430px；根容器 width:100%、max-width:430px、margin:0 auto、min-height:100vh；触控友好（点击区 ≥44px）；底部 tabbar / 顶部 navbar 按需要；不要桌面多列布局。',
     }
     if (p === 'miniprogram') return {
       label: '微信小程序',
-      rules: '画布按微信小程序设计，视口宽度 375px；根容器 max-width:375px、margin:0 auto；预留顶部胶囊/导航高度；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
+      rules: '画布按微信小程序设计，视口宽度 375px；根容器 width:100%、max-width:375px、margin:0 auto、min-height:100vh；可表现小程序顶部导航语义，但不要画手机边框/刘海/浏览器外壳；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
     }
     return {
       label: 'Web 网页（桌面优先，响应式）',
@@ -976,8 +976,10 @@ ${context || '（无）'}
 - 不要输出"默认浏览器风格"的简陋页面：要有完整的配色、排版层级、留白、组件细节、hover/active 状态与微交互。
 - 必须建立可见的 design system：:root CSS tokens（颜色/字体/圆角/阴影/间距）、页面背景、导航/标题区、内容容器、卡片、按钮、标签、输入/筛选、列表或图表至少覆盖其中 5 类；不要只堆文本。
 - ${platform === 'app' || platform === 'miniprogram' ? '移动端页面必须是竖屏体验：主容器 width:100%; max-width:430px 或 375px；min-height:100vh；底部导航/顶部栏/安全区按产品需要处理；不要出现桌面横向大网格。' : 'Web 页面必须有清晰桌面布局和窄屏断点，不要把移动端单列硬拉宽。'}
+- 页面必须像真实可上线的第一稿，而不是线框图或示意稿：正文、标题、标签、数字、列表项、按钮文案要具体可信；首屏必须有明确主视觉/内容焦点和 3 层以上信息层级。
+- 严禁大面积灰色图片占位块、空白卡片、"Lorem ipsum"、"示例标题"、"暂无内容"式偷懒内容。没有真实图片时，用 CSS 渐变、内联 SVG 图标、数据可视化形状、纹理块或主题相关的抽象插画替代；如果证据里提供了公开图片/R2 URL，可以直接作为 img src 使用。
 - 页面必须自包含、覆盖常见状态（加载 / 空 / 错误 / 交互态，参考 page.states）。
-- 使用语义化 HTML、现代 CSS；JS 只为必要交互，不依赖任何外部脚本或 CDN（可用 data-uri / 纯 CSS 占位图，不要外链图片）。
+- 使用语义化 HTML、现代 CSS；JS 只为必要交互，不依赖任何外部脚本或 CDN。允许使用 https 图片 URL、data-uri、内联 SVG 或纯 CSS 图形；不要依赖远程脚本/字体。
 - notes 必须写出 3-6 条“DNA 到代码”的映射，例如某个色值用于哪个元素、某个圆角/阴影如何落地。
 - **块级可编辑结构（强制）**：把 page.sections 里每个逻辑分区包成一个块元素 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>"> ... </section>\`。data-block 是 kebab-case 稳定 slug（页面内唯一，来源于该分区语义，例如 hero / feature-list / pricing），data-block-label 是简短人类可读标签（可中文，例如 顶部横幅）。每个分区只能对应一个块，不要嵌套块、不要漏掉任何分区。
 - **CSS 块定界（强制）**：每个块对应的 CSS 规则用注释定界 \`/* block:<slug> */ ... /* /block:<slug> */\` 包裹（slug 与 data-block 完全一致）；全局/根/重置类 CSS（:root tokens、reset、共享基础样式）必须放在所有块定界之外，集中在 CSS 字符串最顶部，不被任何 block 注释包裹。
@@ -1011,13 +1013,14 @@ ${pageStr}
 - html / css / js 为该页面的完整代码字符串（html 不含 <style>/<script>，分别放入 css 与 js）。
 - 布局必须符合 ${pf.label} 的视口与容器约束（见上方平台规则）。
 - 必须实现 page.sections 与 page.components，并覆盖 page.states 描述的状态。
+- 每个主要区块都要填充面向目标产品的真实中文内容，至少包含 8-14 个具体内容单元（如新闻条目、题目卡片、统计块、分类、操作按钮、状态标签等），避免只做 2-3 个重复卡片。
 - html 中每个 page.sections 分区必须包成 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>">...</section>\`，slug 页面内唯一。
 - css 中每个块的规则用 \`/* block:<slug> */ ... /* /block:<slug> */\` 定界，slug 与 data-block 一致；:root / reset / 共享 token 等全局样式放在最顶部、不被任何 block 注释包裹。
 - 按参考约束执行：${referenceRule}
 - 严格复用设计 DNA 与大爆炸具体因子的具体数值（色板十六进制、字体、圆角、阴影、间距、渐变）；遵守 globalStyle.avoid 列表。
 - CSS 必须包含明确的视觉 token 和组件状态：hover / active / selected / disabled / loading / empty / error 中至少覆盖 4 种。
 - 不要把图像提示词或图片描述当成 UI 生成主 prompt；它们只补充语义和内容方向。
-- 成品要体现参考素材的视觉基线，避免简陋的无样式默认外观。
+- 成品要体现参考素材的视觉基线，避免简陋的无样式默认外观；不要使用大面积 #e5e7eb / #f3f4f6 灰块充当图片或内容。
 - notes 说明“DNA 到代码”的映射，validationChecklist 给出可自检的验收项。`
     const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
     return { systemPrompt, userPrompt, imageUrls }
@@ -1190,7 +1193,11 @@ ${styleStr}
     let result = ''
 
     async function callOpenAICompat(apiUrl, apiKey, modelName) {
-      if (!apiKey) return '缺少接口密钥，请在设置中填写。'
+      if (!apiKey) {
+        const err = new Error('缺少接口密钥，请在设置中填写。')
+        err.status = 400
+        throw err
+      }
       const content = needsVision
         ? [
             { type: 'text', text: `${prompt.systemPrompt}\n\n${prompt.userPrompt}` },
@@ -1209,15 +1216,33 @@ ${styleStr}
       if (wantsJson) {
         body.response_format = { type: 'json_object' }
       }
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-        body: JSON.stringify(body),
-      })
+      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit') ? 85000 : 60000
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+      let res
+      try {
+        res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+      } catch (e) {
+        if (e.name === 'AbortError') {
+          const err = new Error(`AI 请求超时（${Math.round(timeoutMs / 1000)}s）。模型生成页面太慢或供应商繁忙，请换更快的模型/降低页面复杂度后重试。`)
+          err.status = 504
+          throw err
+        }
+        throw e
+      } finally {
+        clearTimeout(timeoutId)
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const errMsg = data.error?.message || data.error?.code || data.message || `HTTP ${res.status}`
-        return `AI 请求失败: ${errMsg}`
+        const err = new Error(`AI 请求失败: ${errMsg}`)
+        err.status = res.status
+        throw err
       }
       // Parse SSE stream and collect content chunks
       const reader = res.body.getReader()
@@ -1243,7 +1268,9 @@ ${styleStr}
       }
       if (!text) {
         console.log(`[AI] Empty streamed response from ${modelName}`)
-        return 'AI 返回为空，请检查模型是否可用。'
+        const err = new Error('AI 返回为空，请检查模型是否可用。')
+        err.status = 502
+        throw err
       }
       return text
     }
@@ -1313,7 +1340,7 @@ ${styleStr}
 
     return json({ result })
   } catch (e) {
-    return json({ error: e.message }, 500)
+    return json({ error: e.message }, e.status || 500)
   }
 }
 
