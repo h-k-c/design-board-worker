@@ -1248,24 +1248,26 @@ ${styleStr}
       return text
     }
 
+    const compatBase = (fallback) => (baseUrl || fallback).replace(/\/$/, '')
+
     if (provider === 'qwen') {
       const key = apiKey || env.QWEN_API_KEY
       result = await callOpenAICompat(
-        'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',
+        `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`,
         key,
         resolvedModel
       )
     } else if (provider === 'deepseek') {
       const key = apiKey || env.DEEPSEEK_API_KEY
       result = await callOpenAICompat(
-        'https://api.deepseek.com/v1/chat/completions',
+        `${compatBase('https://api.deepseek.com/v1')}/chat/completions`,
         key,
         resolvedModel
       )
     } else if (provider === 'zhipu') {
       const key = apiKey || env.ZHIPU_API_KEY
       result = await callOpenAICompat(
-        'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+        `${compatBase('https://open.bigmodel.cn/api/paas/v4')}/chat/completions`,
         key,
         resolvedModel
       )
@@ -1278,21 +1280,21 @@ ${styleStr}
         resolvedModel
       )
     } else if (provider === 'lmstudio') {
-      const baseUrl = lmstudioUrl || 'http://localhost:1234'
+      const localBase = (baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')
       result = await callOpenAICompat(
-        `${baseUrl}/v1/chat/completions`,
+        `${localBase}/v1/chat/completions`,
         'lm-studio',
         model || 'default'
       )
     } else if (provider === 'ollama') {
-      const baseUrl = ollamaUrl || 'http://localhost:11434'
+      const localBase = (baseUrl || ollamaUrl || 'http://localhost:11434').replace(/\/$/, '')
       const b64Images = []
       for (const url of prompt.imageUrls) {
         const imgRes = await fetch(url)
         const imgBuf = await imgRes.arrayBuffer()
         b64Images.push(btoa(String.fromCharCode(...new Uint8Array(imgBuf))))
       }
-      const res = await fetch(`${baseUrl}/api/generate`, {
+      const res = await fetch(`${localBase}/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
