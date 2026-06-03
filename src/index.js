@@ -650,11 +650,9 @@ async function resolveImageUrl(imageUrl, env) {
     }
   }
 
-  const publicKey = keyFromPublicUrl(imageUrl, env)
-  if (publicKey && env.ASSETS) {
-    const object = await env.ASSETS.get(publicKey)
-    return await r2ObjectToDataUrl(object) || imageUrl
-  }
+  // Public R2 URLs are already reachable by model providers. Keep them as URLs
+  // instead of inflating the request body with base64 data.
+  if (keyFromPublicUrl(imageUrl, env)) return imageUrl
 
   const match = imageUrl.match(/\/api\/images\/([^/?#]+)/)
   if (match) {
@@ -666,6 +664,7 @@ async function resolveImageUrl(imageUrl, env) {
 }
 
 async function handleAI(req, env) {
+  const startedAt = Date.now()
   const {
     mode = 'single',
     imageUrl,
@@ -1189,6 +1188,7 @@ ${styleStr}
     qwen:       { vl: 'qwen-vl-max',                    llm: 'qwen-max' },
     deepseek:   { vl: 'deepseek-chat',                   llm: 'deepseek-chat' },
     zhipu:      { vl: 'glm-4v',                          llm: 'glm-4-plus' },
+    mi:         { vl: 'mimo-v2-omni',                    llm: 'mimo-v2-flash' },
   }
   const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
   const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
@@ -1223,7 +1223,11 @@ ${styleStr}
         stream: !needsStableJson,
         enable_thinking: false,
       }
-      if (wantsJson) {
+      // Many OpenAI-compatible third-party endpoints either reject
+      // response_format or handle large JSON worse when it is enabled. Page
+      // generation/edit prompts already require strict JSON and the frontend
+      // parser is tolerant, so only force response_format for smaller JSON jobs.
+      if (wantsJson && !needsStableJson) {
         body.response_format = { type: 'json_object' }
       }
       const timeoutMs = (mode === 'page-generate' || mode === 'page-edit') ? 85000 : 60000
@@ -1326,6 +1330,13 @@ ${styleStr}
         key,
         resolvedModel
       )
+    } else if (provider === 'mi') {
+      const key = apiKey || env.MI_API_KEY
+      result = await callOpenAICompat(
+        `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`,
+        key,
+        resolvedModel
+      )
     } else if (provider === 'lmstudio') {
       const localBase = (baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')
       result = await callOpenAICompat(
@@ -1358,9 +1369,25 @@ ${styleStr}
       return json({ error: 'Unsupported AI provider' }, 400)
     }
 
-    return json({ result })
+    return json({
+      result,
+      meta: {
+        provider,
+        model: resolvedModel,
+        mode,
+        elapsedMs: Date.now() - startedAt,
+      },
+    })
   } catch (e) {
-    return json({ error: e.message }, e.status || 500)
+    return json({
+      error: e.message,
+      meta: {
+        provider,
+        model: resolvedModel,
+        mode,
+        elapsedMs: Date.now() - startedAt,
+      },
+    }, e.status || 500)
   }
 }
 
