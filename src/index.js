@@ -1220,8 +1220,15 @@ ${styleStr}
         model: modelName,
         messages: [{ role: 'user', content }],
         max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
-        stream: !needsStableJson,
-        enable_thinking: false,
+        // Always stream. Non-streaming long generations get killed by idle
+        // timeouts on proxies / providers (DeepSeek etc) → "no response".
+        stream: true,
+      }
+      // `enable_thinking` is a Qwen/DashScope/ModelScope-only field. DeepSeek,
+      // Zhipu and other OpenAI-compatible endpoints may reject the unknown
+      // param (400) — only send it where supported.
+      if (provider === 'qwen' || provider === 'modelscope') {
+        body.enable_thinking = false
       }
       // Many OpenAI-compatible third-party endpoints either reject
       // response_format or handle large JSON worse when it is enabled. Page
@@ -1230,7 +1237,7 @@ ${styleStr}
       if (wantsJson && !needsStableJson) {
         body.response_format = { type: 'json_object' }
       }
-      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit') ? 85000 : 60000
+      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit') ? 110000 : 70000
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       let res
@@ -1257,16 +1264,6 @@ ${styleStr}
         const err = new Error(`AI 请求失败: ${errMsg}`)
         err.status = res.status
         throw err
-      }
-      if (needsStableJson) {
-        const data = await res.json().catch(() => ({}))
-        const text = data.choices?.[0]?.message?.content || data.output_text || data.result || ''
-        if (!text) {
-          const err = new Error('AI 返回为空，请检查模型是否可用。')
-          err.status = 502
-          throw err
-        }
-        return text
       }
       // Parse SSE stream and collect content chunks
       const reader = res.body.getReader()
