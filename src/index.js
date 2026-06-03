@@ -691,6 +691,10 @@ async function handleAI(req, env) {
     page = null,
     current = null,
     instruction = '',
+    // Block-level targeted edit fields (mode: page-block-edit)
+    blockId = '',
+    blockHtml = '',
+    blockCss = '',
   } = await req.json()
 
   // Platform → concrete layout / viewport constraints injected into prompts.
@@ -975,6 +979,8 @@ ${context || '（无）'}
 - 页面必须自包含、覆盖常见状态（加载 / 空 / 错误 / 交互态，参考 page.states）。
 - 使用语义化 HTML、现代 CSS；JS 只为必要交互，不依赖任何外部脚本或 CDN（可用 data-uri / 纯 CSS 占位图，不要外链图片）。
 - notes 必须写出 3-6 条“DNA 到代码”的映射，例如某个色值用于哪个元素、某个圆角/阴影如何落地。
+- **块级可编辑结构（强制）**：把 page.sections 里每个逻辑分区包成一个块元素 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>"> ... </section>\`。data-block 是 kebab-case 稳定 slug（页面内唯一，来源于该分区语义，例如 hero / feature-list / pricing），data-block-label 是简短人类可读标签（可中文，例如 顶部横幅）。每个分区只能对应一个块，不要嵌套块、不要漏掉任何分区。
+- **CSS 块定界（强制）**：每个块对应的 CSS 规则用注释定界 \`/* block:<slug> */ ... /* /block:<slug> */\` 包裹（slug 与 data-block 完全一致）；全局/根/重置类 CSS（:root tokens、reset、共享基础样式）必须放在所有块定界之外，集中在 CSS 字符串最顶部，不被任何 block 注释包裹。
 - 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要额外说明文字。`
     const userPrompt = `产品名（appName）：${appName || ''}
 设计意图（designIntent）：${designIntent || ''}
@@ -1005,6 +1011,8 @@ ${pageStr}
 - html / css / js 为该页面的完整代码字符串（html 不含 <style>/<script>，分别放入 css 与 js）。
 - 布局必须符合 ${pf.label} 的视口与容器约束（见上方平台规则）。
 - 必须实现 page.sections 与 page.components，并覆盖 page.states 描述的状态。
+- html 中每个 page.sections 分区必须包成 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>">...</section>\`，slug 页面内唯一。
+- css 中每个块的规则用 \`/* block:<slug> */ ... /* /block:<slug> */\` 定界，slug 与 data-block 一致；:root / reset / 共享 token 等全局样式放在最顶部、不被任何 block 注释包裹。
 - 按参考约束执行：${referenceRule}
 - 严格复用设计 DNA 与大爆炸具体因子的具体数值（色板十六进制、字体、圆角、阴影、间距、渐变）；遵守 globalStyle.avoid 列表。
 - CSS 必须包含明确的视觉 token 和组件状态：hover / active / selected / disabled / loading / empty / error 中至少覆盖 4 种。
@@ -1074,7 +1082,53 @@ ${cur.js || ''}
     return { systemPrompt, userPrompt, imageUrls }
   }
 
-  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : buildSinglePrompt()
+  function buildPageBlockEditPrompt() {
+    const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，保持现状）'
+    const systemPrompt = `你是一名资深 UI 工程师。你只修改页面中的"单个区块"，绝不触碰页面其他区块。
+要求：
+- 只编辑 data-block="${blockId}" 这一个块，按 instruction 修改其内容/结构/样式；不要改动、不要输出任何其他块。
+- 返回的 html 必须仍然是这个块的完整 outerHTML，且最外层仍是 \`<section data-block="${blockId}" data-block-label="...">...</section>\`（data-block 值必须保持为 "${blockId}"，不可改名、不可拆分或新增块）。
+- 返回的 css 只能包含这个块自身的规则（针对块内选择器），不要输出 :root / reset / 共享 token 等全局样式，也不要包含 /* block */ 定界注释（外层会自动处理）。
+- 除非 instruction 明确要求改风格，否则严格复用设计 DNA / 大爆炸具体因子的具体数值（十六进制色值、字体族/字号/字重、圆角、阴影、间距、渐变）与 globalStyle；保持与目标平台「${pf.label}」一致。
+- 不得对其他块产生视觉影响（不要写会波及其他块的全局或宽泛选择器）。
+- 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要额外说明文字。`
+    const userPrompt = `产品名（appName）：${appName || ''}
+设计意图（designIntent）：${designIntent || ''}
+目标平台（platform）：${pf.label}（${pf.rules}）
+
+设计 DNA / 大爆炸因子 / 辅助语义证据（DNA 与大爆炸具体因子是视觉基线；除非指令要求否则不偏离其具体数值；图像提示词/图片描述/AI 分析仅作辅助语义证据）：
+${context || '（无）'}
+
+全局风格摘要（globalStyle，除非指令要求否则保持不变）：
+${styleStr}
+
+要编辑的区块 ID（blockId）：${blockId}
+
+当前区块 HTML（blockHtml，含 data-block 外层）：
+${blockHtml || ''}
+
+当前区块 CSS（blockCss，仅该块的规则）：
+${blockCss || ''}
+
+用户修改指令（instruction）：
+"${instruction || ''}"
+
+请输出严格符合下面结构的 JSON（字段名必须完全一致）：
+{
+  "blockId": "${blockId}",
+  "html": "",
+  "css": ""
+}
+
+约束：
+- blockId 必须等于 "${blockId}"。
+- html = 修改后该块的完整 outerHTML，最外层保留 \`<section data-block="${blockId}" ...>\` 包裹。
+- css = 只包含该块自身的规则，不含全局样式、不含 block 定界注释。
+- 只改与 instruction 相关的内容，保留该块其余部分；不要影响其他块。`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
@@ -1106,11 +1160,11 @@ ${cur.js || ''}
           ]
         : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
       // Explosion + page modes return JSON — force JSON output format
-      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit'].includes(mode)
+      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
       const body = {
         model: modelName,
         messages: [{ role: 'user', content }],
-        max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : mode === 'page-plan' ? 4096 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         stream: true,
         enable_thinking: false,
       }
