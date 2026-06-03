@@ -701,11 +701,11 @@ async function handleAI(req, env) {
   function platformSpec(p) {
     if (p === 'app') return {
       label: 'App 移动端（iOS/Android 原生风格）',
-      rules: '画布按移动端竖屏设计，视口宽度 390–430px；根容器 width:100%、max-width:430px、margin:0 auto、min-height:100vh；触控友好（点击区 ≥44px）；底部 tabbar / 顶部 navbar 按需要；不要桌面多列布局。',
+      rules: '画布按移动端竖屏设计，固定设计视口 390px 宽；根容器 width:100%、min-height:100vh，铺满当前视口；不要再写更小的 max-width 居中壳；触控友好（点击区 ≥44px）；底部 tabbar / 顶部 navbar 按需要；不要桌面多列布局。',
     }
     if (p === 'miniprogram') return {
       label: '微信小程序',
-      rules: '画布按微信小程序设计，视口宽度 375px；根容器 width:100%、max-width:375px、margin:0 auto、min-height:100vh；可表现小程序顶部导航语义，但不要画手机边框/刘海/浏览器外壳；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
+      rules: '画布按微信小程序设计，固定设计视口 375px 宽；根容器 width:100%、min-height:100vh，铺满当前视口；不要再写更小的 max-width 居中壳；可表现小程序顶部导航语义，但不要画手机边框/刘海/浏览器外壳；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
     }
     return {
       label: 'Web 网页（桌面优先，响应式）',
