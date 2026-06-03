@@ -1202,7 +1202,7 @@ ${styleStr}
   try {
     let result = ''
 
-    async function callOpenAICompat(apiUrl, apiKey, modelName) {
+    async function callOpenAICompat(apiUrl, apiKey, modelName, onDelta) {
       if (!apiKey) {
         const err = new Error('缺少接口密钥，请在设置中填写。')
         err.status = 400
@@ -1238,7 +1238,7 @@ ${styleStr}
       if (wantsJson && !needsStableJson) {
         body.response_format = { type: 'json_object' }
       }
-      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit') ? 110000 : 70000
+      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000 : mode === 'page-plan' ? 150000 : 70000
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       let res
@@ -1284,7 +1284,7 @@ ${styleStr}
           try {
             const chunk = JSON.parse(payload)
             const delta = chunk.choices?.[0]?.delta?.content
-            if (delta) text += delta
+            if (delta) { text += delta; if (onDelta) onDelta(delta) }
           } catch {}
         }
       }
@@ -1299,56 +1299,50 @@ ${styleStr}
 
     const compatBase = (fallback) => (baseUrl || fallback).replace(/\/$/, '')
 
-    if (provider === 'qwen') {
-      const key = apiKey || env.QWEN_API_KEY
-      result = await callOpenAICompat(
-        `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'deepseek') {
-      const key = apiKey || env.DEEPSEEK_API_KEY
-      result = await callOpenAICompat(
-        `${compatBase('https://api.deepseek.com/v1')}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'zhipu') {
-      const key = apiKey || env.ZHIPU_API_KEY
-      result = await callOpenAICompat(
-        `${compatBase('https://open.bigmodel.cn/api/paas/v4')}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'modelscope') {
-      const key = apiKey || env.MODELSCOPE_API_KEY
-      const apiBase = (baseUrl || env.MODELSCOPE_BASE_URL || 'https://api-inference.modelscope.cn/v1').replace(/\/$/, '')
-      result = await callOpenAICompat(
-        `${apiBase}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'mi') {
-      const key = apiKey || env.MI_API_KEY
-      result = await callOpenAICompat(
-        `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'google') {
-      const key = apiKey || env.GOOGLE_API_KEY
-      result = await callOpenAICompat(
-        `${compatBase('https://generativelanguage.googleapis.com/v1beta/openai')}/chat/completions`,
-        key,
-        resolvedModel
-      )
-    } else if (provider === 'lmstudio') {
-      const localBase = (baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')
-      result = await callOpenAICompat(
-        `${localBase}/v1/chat/completions`,
-        'lm-studio',
-        model || 'default'
-      )
+    // Resolve the OpenAI-compatible endpoint + key for the chosen provider.
+    function resolveEndpoint() {
+      switch (provider) {
+        case 'qwen': return { apiUrl: `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`, key: apiKey || env.QWEN_API_KEY, model: resolvedModel }
+        case 'deepseek': return { apiUrl: `${compatBase('https://api.deepseek.com/v1')}/chat/completions`, key: apiKey || env.DEEPSEEK_API_KEY, model: resolvedModel }
+        case 'zhipu': return { apiUrl: `${compatBase('https://open.bigmodel.cn/api/paas/v4')}/chat/completions`, key: apiKey || env.ZHIPU_API_KEY, model: resolvedModel }
+        case 'modelscope': return { apiUrl: `${(baseUrl || env.MODELSCOPE_BASE_URL || 'https://api-inference.modelscope.cn/v1').replace(/\/$/, '')}/chat/completions`, key: apiKey || env.MODELSCOPE_API_KEY, model: resolvedModel }
+        case 'mi': return { apiUrl: `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`, key: apiKey || env.MI_API_KEY, model: resolvedModel }
+        case 'google': return { apiUrl: `${compatBase('https://generativelanguage.googleapis.com/v1beta/openai')}/chat/completions`, key: apiKey || env.GOOGLE_API_KEY, model: resolvedModel }
+        case 'lmstudio': return { apiUrl: `${(baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')}/v1/chat/completions`, key: 'lm-studio', model: model || 'default' }
+        default: return null
+      }
+    }
+
+    // Slow page-generation modes stream the result straight back to the
+    // browser. Keeping bytes flowing prevents the edge / client connection
+    // from timing out on slow models (Gemma, DeepSeek under load, etc).
+    const streamToClient = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
+    if (provider !== 'ollama' && streamToClient) {
+      const ep = resolveEndpoint()
+      if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
+      const { readable, writable } = new TransformStream()
+      const writer = writable.getWriter()
+      const enc = new TextEncoder()
+      ;(async () => {
+        try {
+          await callOpenAICompat(ep.apiUrl, ep.key, ep.model, (delta) => {
+            writer.write(enc.encode(delta)).catch(() => {})
+          })
+        } catch (e) {
+          await writer.write(enc.encode(' ERR ' + (e.message || 'AI 请求失败'))).catch(() => {})
+        } finally {
+          await writer.close().catch(() => {})
+        }
+      })()
+      return new Response(readable, {
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', ...CORS },
+      })
+    }
+
+    if (provider !== 'ollama') {
+      const ep = resolveEndpoint()
+      if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
+      result = await callOpenAICompat(ep.apiUrl, ep.key, ep.model)
     } else if (provider === 'ollama') {
       const localBase = (baseUrl || ollamaUrl || 'http://localhost:11434').replace(/\/$/, '')
       const b64Images = []
