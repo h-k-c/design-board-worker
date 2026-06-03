@@ -1128,7 +1128,45 @@ ${blockCss || ''}
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
-  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : buildSinglePrompt()
+  function buildDesignTokensPrompt() {
+    const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无）'
+    const systemPrompt = `你是一名资深设计系统工程师（design-systems engineer）。你将根据一份美学 DNA（aesthetic DNA，Markdown 文本）以及可选的 globalStyle，提炼出一套最核心的设计 token。
+要求：
+- 只提炼核心 token，严格输出下面这个 JSON 对象结构，不要多余字段、不要嵌套展开：
+{ "appName": "", "palette": [{"name":"","role":"","hex":""}], "fonts": {"headline":"","body":"","label":""}, "radius": 12, "shadow": "", "accentText": "" }
+- palette：3-6 个基础色（不是色阶渐变），每个含 name（如 Primary/Secondary/Neutral）、role（如 primary/secondary/neutral/accent/background）、hex（标准 #RRGGBB）。优先**直接复用** DNA 文本里出现的具体十六进制色值；色值不足时再合理推断补齐，但总数保持 3-6 个。
+- fonts：headline / body / label 三个字段，给出合理的字体族名（family name，如 "Plus Jakarta Sans"、"Inter"）；DNA 中出现就复用，缺失则按整体气质推断。
+- radius：基础圆角，px 数值（number，不带单位）。
+- shadow：一条合法的 CSS box-shadow 值字符串（如 "0 8px 24px rgba(0,0,0,0.08)"）。
+- accentText：用于小型 UI 强调文本/图标的强调色，标准 #RRGGBB（缺失时可复用 palette 中的强调/主色）。
+- 严格只返回这个 JSON 对象本身，不要 Markdown 代码块、不要任何说明文字或前后缀。`
+    const userPrompt = `美学 DNA（aesthetic DNA，Markdown，作为主证据）：
+${context || '（无）'}
+
+可选全局风格（globalStyle）：
+${styleStr}
+
+请严格只返回符合下面结构的 JSON 对象（字段名、层级必须完全一致），不要任何其他文字：
+{
+  "appName": "",
+  "palette": [
+    { "name": "Primary", "role": "primary", "hex": "#000000" }
+  ],
+  "fonts": { "headline": "", "body": "", "label": "" },
+  "radius": 12,
+  "shadow": "",
+  "accentText": "#000000"
+}
+
+约束：
+- palette 含 3-6 个基础色，优先复用 DNA 中出现的具体十六进制色值。
+- radius 为 px 数值（number）。
+- shadow 为合法 CSS box-shadow 字符串。
+- 只返回 JSON 对象本身，不要代码块、不要解释。`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
@@ -1160,11 +1198,11 @@ ${blockCss || ''}
           ]
         : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
       // Explosion + page modes return JSON — force JSON output format
-      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
+      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)
       const body = {
         model: modelName,
         messages: [{ role: 'user', content }],
-        max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         stream: true,
         enable_thinking: false,
       }
