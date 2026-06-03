@@ -1215,11 +1215,12 @@ ${styleStr}
         : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
       // Explosion + page modes return JSON — force JSON output format
       const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)
+      const needsStableJson = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
       const body = {
         model: modelName,
         messages: [{ role: 'user', content }],
         max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
-        stream: true,
+        stream: !needsStableJson,
         enable_thinking: false,
       }
       if (wantsJson) {
@@ -1252,6 +1253,16 @@ ${styleStr}
         const err = new Error(`AI 请求失败: ${errMsg}`)
         err.status = res.status
         throw err
+      }
+      if (needsStableJson) {
+        const data = await res.json().catch(() => ({}))
+        const text = data.choices?.[0]?.message?.content || data.output_text || data.result || ''
+        if (!text) {
+          const err = new Error('AI 返回为空，请检查模型是否可用。')
+          err.status = 502
+          throw err
+        }
+        return text
       }
       // Parse SSE stream and collect content chunks
       const reader = res.body.getReader()
