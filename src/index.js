@@ -1216,6 +1216,7 @@ ${styleStr}
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
+  const promptChars = `${prompt.systemPrompt || ''}\n\n${prompt.userPrompt || ''}`.length
 
   // Default models per provider — auto-select VL vs LLM
   const MODEL_DEFAULTS = {
@@ -1277,6 +1278,7 @@ ${styleStr}
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       let res
+      const providerStartedAt = Date.now()
       try {
         res = await fetch(apiUrl, {
           method: 'POST',
@@ -1306,6 +1308,7 @@ ${styleStr}
       const decoder = new TextDecoder()
       let text = ''
       let buffer = ''
+      let firstDeltaAt = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -1319,7 +1322,14 @@ ${styleStr}
           try {
             const chunk = JSON.parse(payload)
             const delta = chunk.choices?.[0]?.delta?.content
-            if (delta) { text += delta; if (onDelta) onDelta(delta) }
+            if (delta) {
+              if (!firstDeltaAt) {
+                firstDeltaAt = Date.now()
+                console.log(`[AI] first delta mode=${mode} provider=${provider} model=${modelName} promptChars=${promptChars} images=${resolvedImages.length} waitMs=${firstDeltaAt - providerStartedAt}`)
+              }
+              text += delta
+              if (onDelta) onDelta(delta)
+            }
           } catch {}
         }
       }
@@ -1370,7 +1380,13 @@ ${styleStr}
         }
       })()
       return new Response(readable, {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache', ...CORS },
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'no-cache',
+          'X-AI-Prompt-Chars': String(promptChars),
+          'X-AI-Image-Count': String(resolvedImages.length),
+          ...CORS,
+        },
       })
     }
 
@@ -1410,6 +1426,8 @@ ${styleStr}
         model: resolvedModel,
         mode,
         elapsedMs: Date.now() - startedAt,
+        promptChars,
+        imageCount: resolvedImages.length,
       },
     })
   } catch (e) {
@@ -1420,6 +1438,8 @@ ${styleStr}
         model: resolvedModel,
         mode,
         elapsedMs: Date.now() - startedAt,
+        promptChars,
+        imageCount: resolvedImages.length,
       },
     }, e.status || 500)
   }
