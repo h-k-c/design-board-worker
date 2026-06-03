@@ -1189,6 +1189,7 @@ ${styleStr}
     deepseek:   { vl: 'deepseek-chat',                   llm: 'deepseek-chat' },
     zhipu:      { vl: 'glm-4v',                          llm: 'glm-4-plus' },
     mi:         { vl: 'mimo-v2-omni',                    llm: 'mimo-v2-flash' },
+    google:     { vl: 'gemini-2.5-flash',                llm: 'gemini-2.5-flash' },
   }
   const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
   const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
@@ -1331,6 +1332,13 @@ ${styleStr}
       const key = apiKey || env.MI_API_KEY
       result = await callOpenAICompat(
         `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`,
+        key,
+        resolvedModel
+      )
+    } else if (provider === 'google') {
+      const key = apiKey || env.GOOGLE_API_KEY
+      result = await callOpenAICompat(
+        `${compatBase('https://generativelanguage.googleapis.com/v1beta/openai')}/chat/completions`,
         key,
         resolvedModel
       )
