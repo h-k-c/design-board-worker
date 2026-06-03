@@ -1037,6 +1037,9 @@ ${pageStr}
 - ${evidencePriority}
 - 参考约束：${referenceRule}
 - 输出仍是完整、自包含、响应式、覆盖状态的单页面代码（全量替换，而非补丁）。
+- 必须保留并维护现有的 \`data-block\` 区块结构：除非 instruction 明确要求新增/删除区块，否则不要删改已有 data-block slug；新增区块也必须使用 \`<section data-block="...">\`。
+- 必须保持目标平台「${pf.label}」的容器和视口约束：${pf.rules}
+- 不要把已有真实内容改成灰色占位、空白卡片、"示例标题" 或 Lorem ipsum；编辑后仍要像真实可上线页面。
 - notes 必须说明本次修改如何保留或调整设计 DNA / 大爆炸具体因子；若使用图像提示词、图片描述或 AI 分析，只能说明其辅助语义作用。
 - 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要额外说明文字。`
     const userPrompt = `产品名（appName）：${appName || ''}
@@ -1079,6 +1082,9 @@ ${cur.js || ''}
 约束：
 - 只改与 instruction 相关的部分，保留其余内容。
 - 保持 globalStyle，除非指令明确要求修改风格。
+- 保留原有 data-block / data-block-label；不要因为全量输出而丢失区块可编辑标记。
+- 保留已有页面的内容密度和信息层级；不要生成大面积灰色图片占位块。
+- CSS 继续包含 :root tokens、平台容器约束和已有组件状态；不要退化成少量默认样式。
 - html / css / js 为修改后的完整代码字符串（全量）。
 - notes 说明本次改动，validationChecklist 给出可自检的验收项。`
     const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
@@ -1092,8 +1098,10 @@ ${cur.js || ''}
 - 只编辑 data-block="${blockId}" 这一个块，按 instruction 修改其内容/结构/样式；不要改动、不要输出任何其他块。
 - 返回的 html 必须仍然是这个块的完整 outerHTML，且最外层仍是 \`<section data-block="${blockId}" data-block-label="...">...</section>\`（data-block 值必须保持为 "${blockId}"，不可改名、不可拆分或新增块）。
 - 返回的 css 只能包含这个块自身的规则（针对块内选择器），不要输出 :root / reset / 共享 token 等全局样式，也不要包含 /* block */ 定界注释（外层会自动处理）。
+- css 选择器必须尽量以 \`[data-block="${blockId}"]\` 或该区块内的局部类名开头，避免影响其他区块；不要输出 body、html、:root、*、section、button 这类全局选择器。
 - 除非 instruction 明确要求改风格，否则严格复用设计 DNA / 大爆炸具体因子的具体数值（十六进制色值、字体族/字号/字重、圆角、阴影、间距、渐变）与 globalStyle；保持与目标平台「${pf.label}」一致。
 - 不得对其他块产生视觉影响（不要写会波及其他块的全局或宽泛选择器）。
+- 不要把该区块已有真实内容替换成灰色占位或空白示意；如果 instruction 是视觉调整，优先保留内容，只改样式。
 - 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要额外说明文字。`
     const userPrompt = `产品名（appName）：${appName || ''}
 设计意图（designIntent）：${designIntent || ''}
@@ -1127,6 +1135,7 @@ ${blockCss || ''}
 - blockId 必须等于 "${blockId}"。
 - html = 修改后该块的完整 outerHTML，最外层保留 \`<section data-block="${blockId}" ...>\` 包裹。
 - css = 只包含该块自身的规则，不含全局样式、不含 block 定界注释。
+- css 不要包含会影响全页的选择器；推荐写成 \`[data-block="${blockId}"] .class-name { ... }\`。
 - 只改与 instruction 相关的内容，保留该块其余部分；不要影响其他块。`
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
