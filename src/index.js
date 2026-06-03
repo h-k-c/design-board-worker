@@ -16,6 +16,14 @@ function json(data, status = 200) {
   })
 }
 
+function sanitizeModelText(text) {
+  return String(text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<thought>[\s\S]*?<\/thought>/gi, '')
+    .replace(/^<thought>[\s\S]*?(?=\{|\[|##|#)/i, '')
+    .trim()
+}
+
 // ── JWT ──
 
 async function getKey(secret) {
@@ -1176,7 +1184,7 @@ ${blockCss || ''}
 
   function buildDesignTokensPrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无）'
-    const systemPrompt = `你是一名资深设计系统工程师（design-systems engineer）。你将根据一份美学 DNA（aesthetic DNA，Markdown 文本）以及可选的 globalStyle，提炼出一套最核心的设计 token。
+    const systemPrompt = `你是一名资深设计系统工程师。你将根据一份美学 DNA（Markdown 文本）以及可选的 globalStyle，提炼出一套最核心的设计 token。
 要求：
 - 只提炼核心 token，严格输出下面这个 JSON 对象结构，不要多余字段、不要嵌套展开：
 { "appName": "", "palette": [{"name":"","role":"","hex":""}], "fonts": {"headline":"","body":"","label":""}, "radius": 12, "shadow": "", "accentText": "" }
@@ -1185,14 +1193,14 @@ ${blockCss || ''}
 - radius：基础圆角，px 数值（number，不带单位）。
 - shadow：一条合法的 CSS box-shadow 值字符串（如 "0 8px 24px rgba(0,0,0,0.08)"）。
 - accentText：用于小型 UI 强调文本/图标的强调色，标准 #RRGGBB（缺失时可复用 palette 中的强调/主色）。
-- 严格只返回这个 JSON 对象本身，不要 Markdown 代码块、不要任何说明文字或前后缀。`
+- 严格只返回这个 JSON 对象本身，不要 Markdown 代码块、不要任何说明文字、不要思考过程、不要 <think> 或 <thought> 标签。`
     const userPrompt = `美学 DNA（aesthetic DNA，Markdown，作为主证据）：
 ${context || '（无）'}
 
 可选全局风格（globalStyle）：
 ${styleStr}
 
-请严格只返回符合下面结构的 JSON 对象（字段名、层级必须完全一致），不要任何其他文字：
+请严格只返回符合下面结构的 JSON 对象（字段名、层级必须完全一致），不要任何其他文字、解释、列表或 thought：
 {
   "appName": "",
   "palette": [
@@ -1418,6 +1426,7 @@ ${styleStr}
     } else {
       return json({ error: 'Unsupported AI provider' }, 400)
     }
+    result = sanitizeModelText(result)
 
     return json({
       result,
