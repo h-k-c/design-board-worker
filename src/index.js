@@ -144,23 +144,23 @@ async function r2ObjectToDataUrl(object) {
   return dataUrlFromBytes(bytes, contentType)
 }
 
-async function loadJsonSetting(env, key) {
+async function loadJsonSetting(env, userId, key) {
   if (!env.DB) return null
   try {
-    const row = await env.DB.prepare('SELECT value FROM app_settings WHERE key = ?').bind(key).first()
+    const row = await env.DB.prepare('SELECT value FROM app_settings WHERE user_id = ? AND key = ?').bind(userId, key).first()
     return row?.value ? JSON.parse(row.value) : null
   } catch {
     return null
   }
 }
 
-async function saveJsonSetting(env, key, value) {
+async function saveJsonSetting(env, userId, key, value) {
   if (!env.DB || value === undefined) return
   await env.DB.prepare(
-    `INSERT INTO app_settings (key, value, updated_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
-  ).bind(key, JSON.stringify(value ?? null)).run()
+    `INSERT INTO app_settings (user_id, key, value, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).bind(userId, key, JSON.stringify(value ?? null)).run()
 }
 
 function collectAssetRefs(value, env, refs = { ids: new Set(), keys: new Set(), urls: new Set() }) {
@@ -187,11 +187,11 @@ function collectAssetRefs(value, env, refs = { ids: new Set(), keys: new Set(), 
   return refs
 }
 
-async function syncAssetReferences(cards, env) {
+async function syncAssetReferences(cards, env, userId) {
   if (!env.DB) return
   let rows
   try {
-    rows = await env.DB.prepare('SELECT id, r2_key, public_url, deleted_at FROM assets').all()
+    rows = await env.DB.prepare('SELECT id, r2_key, public_url, deleted_at FROM assets WHERE user_id = ?').bind(userId).all()
   } catch {
     return
   }
@@ -254,38 +254,43 @@ function versionR2Keys(groupId, pageId, versionNo) {
   }
 }
 
-async function handleCreateGroup(req, env) {
+async function handleCreateGroup(req, env, userId) {
   const body = await req.json().catch(() => ({}))
   const { cardId, title, promptCardId } = body
   const id = crypto.randomUUID()
   try {
     await env.DB.prepare(
-      `INSERT INTO generated_page_groups (id, card_id, title, prompt_card_id)
-       VALUES (?,?,?,?)`
-    ).bind(id, cardId || null, title || null, promptCardId || null).run()
+      `INSERT INTO generated_page_groups (id, card_id, title, prompt_card_id, user_id)
+       VALUES (?,?,?,?,?)`
+    ).bind(id, cardId || null, title || null, promptCardId || null, userId).run()
     return json({ id })
   } catch (e) {
     return json({ error: e.message }, 500)
   }
 }
 
-async function handleCreatePage(req, env) {
+async function handleCreatePage(req, env, userId) {
   const body = await req.json().catch(() => ({}))
   const { groupId, slug, title, routePath, sortOrder, parentPageId } = body
   if (!groupId) return json({ error: 'groupId is required' }, 400)
   const id = crypto.randomUUID()
   try {
+    // Ensure the target group belongs to the caller.
+    const group = await env.DB.prepare(
+      'SELECT id FROM generated_page_groups WHERE id = ? AND user_id = ?'
+    ).bind(groupId, userId).first()
+    if (!group) return json({ error: 'Group not found' }, 404)
     await env.DB.prepare(
-      `INSERT INTO generated_pages (id, group_id, slug, title, route_path, sort_order, parent_page_id)
-       VALUES (?,?,?,?,?,?,?)`
-    ).bind(id, groupId, slug || null, title || null, routePath || null, Number(sortOrder) || 0, parentPageId || null).run()
+      `INSERT INTO generated_pages (id, group_id, slug, title, route_path, sort_order, parent_page_id, user_id)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(id, groupId, slug || null, title || null, routePath || null, Number(sortOrder) || 0, parentPageId || null, userId).run()
     return json({ id })
   } catch (e) {
     return json({ error: e.message }, 500)
   }
 }
 
-async function handleCreateVersion(req, env) {
+async function handleCreateVersion(req, env, userId) {
   if (!env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
   const body = await req.json().catch(() => ({}))
   const { pageId, html, css, js, sourcePrompt, editInstruction, summary } = body
@@ -293,8 +298,8 @@ async function handleCreateVersion(req, env) {
 
   try {
     const page = await env.DB.prepare(
-      'SELECT group_id, current_version_id FROM generated_pages WHERE id = ?'
-    ).bind(pageId).first()
+      'SELECT group_id, current_version_id FROM generated_pages WHERE id = ? AND user_id = ?'
+    ).bind(pageId, userId).first()
     if (!page) return json({ error: 'Page not found' }, 404)
     const groupId = page.group_id
 
@@ -311,23 +316,23 @@ async function handleCreateVersion(req, env) {
     const versionId = crypto.randomUUID()
     await env.DB.prepare(
       `INSERT INTO generated_page_versions
-        (id, page_id, version_no, source_prompt, edit_instruction, html_r2_key, css_r2_key, js_r2_key, summary, created_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`
+        (id, page_id, version_no, source_prompt, edit_instruction, html_r2_key, css_r2_key, js_r2_key, summary, created_by, user_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       versionId, pageId, versionNo, sourcePrompt || null, editInstruction || null,
-      keys.html, keys.css, keys.js, summary || null, null
+      keys.html, keys.css, keys.js, summary || null, userId, userId
     ).run()
 
     await env.DB.prepare(
-      "UPDATE generated_pages SET current_version_id = ?, updated_at = datetime('now') WHERE id = ?"
-    ).bind(versionId, pageId).run()
+      "UPDATE generated_pages SET current_version_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(versionId, pageId, userId).run()
 
     await env.DB.prepare(
-      `INSERT INTO page_edit_events (id, page_id, from_version_id, to_version_id, operation, instruction)
-       VALUES (?,?,?,?,?,?)`
+      `INSERT INTO page_edit_events (id, page_id, from_version_id, to_version_id, operation, instruction, user_id)
+       VALUES (?,?,?,?,?,?,?)`
     ).bind(
       crypto.randomUUID(), pageId, page.current_version_id || null, versionId,
-      editInstruction ? 'edit' : 'create', editInstruction || null
+      editInstruction ? 'edit' : 'create', editInstruction || null, userId
     ).run()
 
     return json({ versionId, versionNo })
@@ -336,12 +341,12 @@ async function handleCreateVersion(req, env) {
   }
 }
 
-async function handleGetVersionContent(req, env, id) {
+async function handleGetVersionContent(req, env, id, userId) {
   if (!env.ASSETS) return json({ error: 'Asset storage is not configured' }, 500)
   try {
     const row = await env.DB.prepare(
-      'SELECT html_r2_key, css_r2_key, js_r2_key FROM generated_page_versions WHERE id = ?'
-    ).bind(id).first()
+      'SELECT html_r2_key, css_r2_key, js_r2_key FROM generated_page_versions WHERE id = ? AND user_id = ?'
+    ).bind(id, userId).first()
     if (!row) return json({ error: 'Version not found' }, 404)
 
     async function readKey(key) {
@@ -362,12 +367,12 @@ async function handleGetVersionContent(req, env, id) {
   }
 }
 
-async function handleGetPageVersions(req, env, id) {
+async function handleGetPageVersions(req, env, id, userId) {
   try {
     const rows = await env.DB.prepare(
       `SELECT id, version_no, summary, created_at FROM generated_page_versions
-       WHERE page_id = ? ORDER BY version_no DESC`
-    ).bind(id).all()
+       WHERE page_id = ? AND user_id = ? ORDER BY version_no DESC`
+    ).bind(id, userId).all()
     const versions = (rows.results || []).map(r => ({
       id: r.id,
       versionNo: r.version_no,
@@ -380,25 +385,25 @@ async function handleGetPageVersions(req, env, id) {
   }
 }
 
-async function handleDeleteGroup(req, env, id) {
+async function handleDeleteGroup(req, env, id, userId) {
   try {
     await env.DB.prepare(
-      "UPDATE generated_page_groups SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-    ).bind(id).run()
+      "UPDATE generated_page_groups SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(id, userId).run()
     await env.DB.prepare(
-      "UPDATE generated_pages SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE group_id = ?"
-    ).bind(id).run()
+      "UPDATE generated_pages SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE group_id = ? AND user_id = ?"
+    ).bind(id, userId).run()
     return json({ ok: true })
   } catch (e) {
     return json({ error: e.message }, 500)
   }
 }
 
-async function handleDeletePage(req, env, id) {
+async function handleDeletePage(req, env, id, userId) {
   try {
     await env.DB.prepare(
-      "UPDATE generated_pages SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
-    ).bind(id).run()
+      "UPDATE generated_pages SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(id, userId).run()
     return json({ ok: true })
   } catch (e) {
     return json({ error: e.message }, 500)
@@ -503,13 +508,13 @@ async function handleLogin(req, env) {
   }
 }
 
-async function handleGetBoard(req, env) {
+async function handleGetBoard(req, env, userId) {
   try {
-    const state = await env.DB.prepare('SELECT transform FROM board_state WHERE id = 1').first()
-    const cards = await env.DB.prepare('SELECT * FROM cards ORDER BY created_at').all()
+    const state = await env.DB.prepare('SELECT transform FROM board_state WHERE user_id = ?').bind(userId).first()
+    const cards = await env.DB.prepare('SELECT * FROM cards WHERE user_id = ? ORDER BY created_at').bind(userId).all()
     const transform = state ? JSON.parse(state.transform) : { x: 0, y: 0, scale: 1 }
-    const settings = await loadJsonSetting(env, 'provider_settings')
-    const uiSettings = await loadJsonSetting(env, 'ui_settings')
+    const settings = await loadJsonSetting(env, userId, 'provider_settings')
+    const uiSettings = await loadJsonSetting(env, userId, 'ui_settings')
 
     const mapped = cards.results.map(row => {
       const content = JSON.parse(row.content)
@@ -524,23 +529,28 @@ async function handleGetBoard(req, env) {
   }
 }
 
-async function handleSaveBoard(req, env) {
+async function handleSaveBoard(req, env, userId) {
   const { cards, transform, settings, uiSettings } = await req.json()
 
   try {
-    await env.DB.prepare('UPDATE board_state SET transform = ? WHERE id = 1')
-      .bind(JSON.stringify(transform)).run()
-    await saveJsonSetting(env, 'provider_settings', settings)
-    await saveJsonSetting(env, 'ui_settings', uiSettings)
+    // Per-user board_state: update the user's row, insert it if absent.
+    const upd = await env.DB.prepare('UPDATE board_state SET transform = ? WHERE user_id = ?')
+      .bind(JSON.stringify(transform), userId).run()
+    if (!upd.meta?.changes) {
+      await env.DB.prepare('INSERT INTO board_state (user_id, transform) VALUES (?, ?)')
+        .bind(userId, JSON.stringify(transform)).run()
+    }
+    await saveJsonSetting(env, userId, 'provider_settings', settings)
+    await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
 
-    const existing = await env.DB.prepare('SELECT id FROM cards').all()
+    const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
     const existingIds = new Set(existing.results.map(r => r.id))
     const incomingIds = new Set(cards.map(c => c.id))
 
     for (const id of existingIds) {
       if (!incomingIds.has(id)) {
-        await env.DB.prepare('DELETE FROM cards WHERE id = ?').bind(id).run()
-        await env.DB.prepare('DELETE FROM images WHERE card_id = ?').bind(id).run()
+        await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
+        await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
       }
     }
 
@@ -550,16 +560,16 @@ async function handleSaveBoard(req, env) {
 
       if (existingIds.has(id)) {
         await env.DB.prepare(
-          'UPDATE cards SET type=?, x=?, y=?, w=?, h=?, content=?, linked_to=?, updated_at=datetime(\'now\') WHERE id=?'
-        ).bind(type, x, y, w, h, content, linkedTo || null, id).run()
+          'UPDATE cards SET type=?, x=?, y=?, w=?, h=?, content=?, linked_to=?, updated_at=datetime(\'now\') WHERE id=? AND user_id=?'
+        ).bind(type, x, y, w, h, content, linkedTo || null, id, userId).run()
       } else {
         await env.DB.prepare(
-          'INSERT INTO cards (id, type, x, y, w, h, content, linked_to) VALUES (?,?,?,?,?,?,?,?)'
-        ).bind(id, type, x, y, w, h, content, linkedTo || null).run()
+          'INSERT INTO cards (id, type, x, y, w, h, content, linked_to, user_id) VALUES (?,?,?,?,?,?,?,?,?)'
+        ).bind(id, type, x, y, w, h, content, linkedTo || null, userId).run()
       }
     }
 
-    await syncAssetReferences(cards, env)
+    await syncAssetReferences(cards, env, userId)
 
     return json({ ok: true })
   } catch (e) {
@@ -567,7 +577,7 @@ async function handleSaveBoard(req, env) {
   }
 }
 
-async function handleUpload(req, env) {
+async function handleUpload(req, env, userId) {
   const { data, filename, contentType } = await req.json()
   if (!data) return json({ error: '没有收到图片数据' }, 400)
 
@@ -593,9 +603,9 @@ async function handleUpload(req, env) {
 
     try {
       await env.DB.prepare(
-        `INSERT INTO assets (id, r2_key, public_url, filename, content_type, size, created_at)
-         VALUES (?,?,?,?,?,?,datetime('now'))`
-      ).bind(id, objectKey, publicUrl, filename || '', resolvedContentType, parsed.bytes.length).run()
+        `INSERT INTO assets (id, r2_key, public_url, filename, content_type, size, user_id, created_at)
+         VALUES (?,?,?,?,?,?,?,datetime('now'))`
+      ).bind(id, objectKey, publicUrl, filename || '', resolvedContentType, parsed.bytes.length, userId).run()
     } catch {}
 
     return json({
@@ -611,8 +621,8 @@ async function handleUpload(req, env) {
   }
 
   await env.DB.prepare(
-    'INSERT INTO images (id, data, filename, content_type) VALUES (?,?,?,?)'
-  ).bind(id, data, filename, resolvedContentType).run()
+    'INSERT INTO images (id, data, filename, content_type, user_id) VALUES (?,?,?,?,?)'
+  ).bind(id, data, filename, resolvedContentType, userId).run()
 
   return json({ url: `/api/images/${id}`, storage: 'd1', contentType: resolvedContentType })
 }
@@ -1494,30 +1504,31 @@ export default {
     // Protected routes
     const user = await authMiddleware(req, env)
     if (!user) return json({ error: '未授权，请重新登录' }, 401)
+    const userId = user.sub
 
-    if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env)
-    if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env)
-    if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env)
+    if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env, userId)
+    if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
+    if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env)
 
     // Generated pages (Phase 2 durable persistence)
-    if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env)
-    if (path === '/api/generated/pages' && req.method === 'POST') return handleCreatePage(req, env)
-    if (path === '/api/generated/versions' && req.method === 'POST') return handleCreateVersion(req, env)
+    if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env, userId)
+    if (path === '/api/generated/pages' && req.method === 'POST') return handleCreatePage(req, env, userId)
+    if (path === '/api/generated/versions' && req.method === 'POST') return handleCreateVersion(req, env, userId)
 
     let m
     if ((m = path.match(/^\/api\/generated\/versions\/([^/]+)\/content$/)) && req.method === 'GET') {
-      return handleGetVersionContent(req, env, m[1])
+      return handleGetVersionContent(req, env, m[1], userId)
     }
     if ((m = path.match(/^\/api\/generated\/pages\/([^/]+)\/versions$/)) && req.method === 'GET') {
-      return handleGetPageVersions(req, env, m[1])
+      return handleGetPageVersions(req, env, m[1], userId)
     }
     if ((m = path.match(/^\/api\/generated\/pages\/([^/]+)$/)) && req.method === 'DELETE') {
-      return handleDeletePage(req, env, m[1])
+      return handleDeletePage(req, env, m[1], userId)
     }
     if ((m = path.match(/^\/api\/generated\/groups\/([^/]+)$/)) && req.method === 'DELETE') {
-      return handleDeleteGroup(req, env, m[1])
+      return handleDeleteGroup(req, env, m[1], userId)
     }
 
     return json({ error: '未找到接口' }, 404)
