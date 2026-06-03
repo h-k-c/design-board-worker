@@ -687,6 +687,7 @@ async function handleAI(req, env) {
     appName = '',
     designIntent = '',
     globalStyle = null,
+    uiContract = null,
     page = null,
     current = null,
     instruction = '',
@@ -712,6 +713,11 @@ async function handleAI(req, env) {
     }
   }
   const pf = platformSpec(platform)
+  const viewport = uiContract?.viewport || (platform === 'miniprogram'
+    ? { platform, width: 375, height: 812 }
+    : platform === 'app'
+      ? { platform, width: 390, height: 844 }
+      : { platform: 'web', width: 1280, height: 720 })
   const pageLimit = Math.max(1, Math.min(8, Number.parseInt(maxPages, 10) || 5))
   const planScope = generationScope === 'single' ? 'single' : 'core'
   const effectivePageLimit = planScope === 'single' ? 1 : pageLimit
@@ -936,6 +942,15 @@ ${context || '（无）'}
     "motionRules": [],
     "avoid": []
   },
+  "uiContract": {
+    "version": 1,
+    "viewport": { "platform": "${platform}", "width": ${viewport.width}, "height": ${viewport.height}, "scaleMode": "${platform === 'web' ? 'responsive' : 'fixed'}" },
+    "tokens": {},
+    "sharedComponents": [
+      { "id": "", "type": "", "placement": "", "props": {} }
+    ],
+    "rules": []
+  },
   "pages": [
     {
       "id": "home",
@@ -945,6 +960,7 @@ ${context || '（无）'}
       "sections": [],
       "components": [],
       "states": [],
+      "navKey": "",
       "responsiveNotes": "",
       "evidenceIds": []
     }
@@ -955,6 +971,9 @@ ${context || '（无）'}
 - 页面数量必须在 1-${effectivePageLimit} 个之间。${planScope === 'single' ? '只能输出 1 个页面。' : '超过上限时合并次要页面。'}
 - appName / designIntent 用简洁中文概括产品与设计意图。
 - globalStyle 必须从设计 DNA 与大爆炸具体因子中提炼出可复用的全局规范，并尽量保留主证据里的**具体数值**（色板十六进制、字体族与字号、圆角、阴影、间距、动效缓动）。
+- uiContract 是跨时间持久化的项目 UI 契约，不是单次页面描述：viewport 必须使用上方给定平台宽高；tokens 复用 globalStyle 的具体数值；sharedComponents 只描述本项目多页面应复用的全局组件（例如 topbar、bottom-nav、sidebar、searchbar、filterbar、card-list、floating-action），不要为单页内容创建共享组件。
+- sharedComponents 必须是动态识别结果：如果产品需要底部导航就输出 bottom-nav；如果需要顶部导航/侧边栏/搜索栏也要输出；不要把底栏当成唯一可能的共享组件。props 中描述 tabs/items/icons/activeKeySource/slot 等可变属性。
+- 每个 page 可用 navKey / shellState 指明共享组件的 active 状态，但不要让每个页面重新生成同一份共享组件。
 - 图像提示词、图片描述、单图 AI 分析只能帮助理解产品语义和氛围，不得作为主要视觉规范。
 - globalStyle.layout 要体现 ${pf.label} 的形态约束。
 - 每个 page 的 sections / components / states 用具体短语数组。
@@ -965,6 +984,7 @@ ${context || '（无）'}
 
   function buildPageGeneratePrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
+    const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
     const systemPrompt = `你是一名资深 UI 工程师，能把参考视觉精确迁移到可运行界面。你将为一个 ${pf.label} 产品的"单个页面"生成完整、自包含、可直接预览的前端代码。
 要求：
@@ -974,7 +994,8 @@ ${context || '（无）'}
 - 图像提示词、图片描述、单图 AI 分析只用于理解内容主题、对象语义和氛围方向，不得覆盖主证据里的 CSS 数值和组件语言。
 - 不要输出"默认浏览器风格"的简陋页面：要有完整的配色、排版层级、留白、组件细节、hover/active 状态与微交互。
 - 必须建立可见的 design system：:root CSS tokens（颜色/字体/圆角/阴影/间距）、页面背景、导航/标题区、内容容器、卡片、按钮、标签、输入/筛选、列表或图表至少覆盖其中 5 类；不要只堆文本。
-- ${platform === 'app' || platform === 'miniprogram' ? '移动端页面必须是竖屏体验：主容器 width:100%; max-width:430px 或 375px；min-height:100vh；底部导航/顶部栏/安全区按产品需要处理；不要出现桌面横向大网格。' : 'Web 页面必须有清晰桌面布局和窄屏断点，不要把移动端单列硬拉宽。'}
+- 固定设计视口：本次平台 viewport 为 ${viewport.width}x${viewport.height}。移动端页面内容必须按这个精确宽度设计，根内容 width:100%，不要再写更小的 max-width 居中壳；Web 才允许响应式容器。
+- sharedComponents / sharedShell 是跨页面复用资产，不能每页重画。如果 uiContract 已包含 sharedShell，则本次只生成 pageContent；如果 uiContract 还没有 sharedShell，但 sharedComponents 非空，则本次必须同时生成 sharedShell（只生成一次，含 {{PAGE_CONTENT}} 插槽）。
 - 页面必须像真实可上线的第一稿，而不是线框图或示意稿：正文、标题、标签、数字、列表项、按钮文案要具体可信；首屏必须有明确主视觉/内容焦点和 3 层以上信息层级。
 - 严禁大面积灰色图片占位块、空白卡片、"Lorem ipsum"、"示例标题"、"暂无内容"式偷懒内容。没有真实图片时，用 CSS 渐变、内联 SVG 图标、数据可视化形状、纹理块或主题相关的抽象插画替代；如果证据里提供了公开图片/R2 URL，可以直接作为 img src 使用。
 - 页面必须自包含、覆盖常见状态（加载 / 空 / 错误 / 交互态，参考 page.states）。
@@ -993,6 +1014,9 @@ ${context || '（无，按 globalStyle 与 designIntent 合理发挥，仍需有
 全局风格摘要（globalStyle）：
 ${styleStr}
 
+项目 UI 契约（uiContract，跨页面持久化；已有 sharedShell 时必须复用）：
+${contractStr}
+
 当前要生成的页面（page）：
 ${pageStr}
 
@@ -1003,17 +1027,21 @@ ${pageStr}
   "html": "",
   "css": "",
   "js": "",
+  "sharedShell": null,
+  "pageContent": { "html": "", "css": "", "js": "" },
   "notes": [],
   "validationChecklist": []
 }
 
 约束：
 - pageId 与 page.id 保持一致。
-- html / css / js 为该页面的完整代码字符串（html 不含 <style>/<script>，分别放入 css 与 js）。
-- 布局必须符合 ${pf.label} 的视口与容器约束（见上方平台规则）。
+- 如果 uiContract.sharedShell 已存在：pageContent 必须输出该页主体内容，html/css/js 可与 pageContent 保持相同；绝对不要重新生成 topbar/bottom-nav/sidebar/searchbar/filterbar 等 sharedComponents。
+- 如果 uiContract.sharedShell 不存在且 uiContract.sharedComponents 非空：sharedShell 必须输出共享外壳代码，html 中必须包含 {{PAGE_CONTENT}} 插槽；pageContent 输出当前页主体内容。sharedShell 只能包含跨页面复用的顶部/底部/侧边/全局控件，不包含当前页专属列表内容。
+- 如果没有 sharedComponents：按旧模式输出 html/css/js 完整页面。
+- 布局必须符合 ${pf.label} 的固定视口：移动端严格 ${viewport.width}px 宽，不要在页面内部使用更小 max-width 居中导致左右留白。
 - 必须实现 page.sections 与 page.components，并覆盖 page.states 描述的状态。
 - 每个主要区块都要填充面向目标产品的真实中文内容，至少包含 8-14 个具体内容单元（如新闻条目、题目卡片、统计块、分类、操作按钮、状态标签等），避免只做 2-3 个重复卡片。
-- html 中每个 page.sections 分区必须包成 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>">...</section>\`，slug 页面内唯一。
+- pageContent/html 中每个 page.sections 分区必须包成 \`<section data-block="<kebab-slug>" data-block-label="<简短标签>">...</section>\`，slug 页面内唯一。
 - css 中每个块的规则用 \`/* block:<slug> */ ... /* /block:<slug> */\` 定界，slug 与 data-block 一致；:root / reset / 共享 token 等全局样式放在最顶部、不被任何 block 注释包裹。
 - 按参考约束执行：${referenceRule}
 - 严格复用设计 DNA 与大爆炸具体因子的具体数值（色板十六进制、字体、圆角、阴影、间距、渐变）；遵守 globalStyle.avoid 列表。
@@ -1027,6 +1055,7 @@ ${pageStr}
 
   function buildPageEditPrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，保持现状）'
+    const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
     const cur = current || {}
     const systemPrompt = `你是一名资深 UI 工程师。你将根据用户指令修改一个已有页面，并输出"全量替换"的完整页面代码。
@@ -1036,6 +1065,7 @@ ${pageStr}
 - ${evidencePriority}
 - 参考约束：${referenceRule}
 - 输出仍是完整、自包含、响应式、覆盖状态的单页面代码（全量替换，而非补丁）。
+- 如果 uiContract.sharedShell 已存在，sharedComponents 是跨页面复用外壳，不能在本页编辑中重画或修改；本次只输出 pageContent/html/css/js 的页面主体内容。除非 instruction 明确要求调整全局导航/外壳，否则不要改 topbar/bottom-nav/sidebar/searchbar/filterbar。
 - 必须保留并维护现有的 \`data-block\` 区块结构：除非 instruction 明确要求新增/删除区块，否则不要删改已有 data-block slug；新增区块也必须使用 \`<section data-block="...">\`。
 - 必须保持目标平台「${pf.label}」的容器和视口约束：${pf.rules}
 - 不要把已有真实内容改成灰色占位、空白卡片、"示例标题" 或 Lorem ipsum；编辑后仍要像真实可上线页面。
@@ -1050,6 +1080,9 @@ ${context || '（无）'}
 
 全局风格摘要（globalStyle，除非指令要求否则保持不变）：
 ${styleStr}
+
+项目 UI 契约（uiContract，跨页面持久化；已有 sharedShell 时必须复用）：
+${contractStr}
 
 页面规划（page）：
 ${pageStr}
@@ -1074,6 +1107,7 @@ ${cur.js || ''}
   "html": "",
   "css": "",
   "js": "",
+  "pageContent": { "html": "", "css": "", "js": "" },
   "notes": [],
   "validationChecklist": []
 }
@@ -1085,6 +1119,7 @@ ${cur.js || ''}
 - 保留已有页面的内容密度和信息层级；不要生成大面积灰色图片占位块。
 - CSS 继续包含 :root tokens、平台容器约束和已有组件状态；不要退化成少量默认样式。
 - html / css / js 为修改后的完整代码字符串（全量）。
+- 如果 uiContract.sharedShell 已存在：pageContent 必须输出修改后的主体内容；html/css/js 可与 pageContent 保持相同；不要把共享外壳、顶栏、底栏、侧栏重新输出到页面内容里。
 - notes 说明本次改动，validationChecklist 给出可自检的验收项。`
     const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
     return { systemPrompt, userPrompt, imageUrls }
@@ -1329,7 +1364,7 @@ ${styleStr}
             writer.write(enc.encode(delta)).catch(() => {})
           })
         } catch (e) {
-          await writer.write(enc.encode(' ERR ' + (e.message || 'AI 请求失败'))).catch(() => {})
+          await writer.write(enc.encode('__DB_AI_ERROR__:' + (e.message || 'AI 请求失败'))).catch(() => {})
         } finally {
           await writer.close().catch(() => {})
         }
