@@ -970,6 +970,8 @@ ${context || '（无）'}
 - **设计 DNA 与大爆炸具体因子是最高优先级的视觉规范**：${referenceRule} 必须把下方主证据里的具体数值（十六进制色值、字体族/字号/字重、圆角、阴影 box-shadow、间距、渐变、毛玻璃等）直接落到 CSS 上。globalStyle 是它的结构化摘要，二者冲突时以 DNA / 大爆炸具体因子为准。
 - 图像提示词、图片描述、单图 AI 分析只用于理解内容主题、对象语义和氛围方向，不得覆盖主证据里的 CSS 数值和组件语言。
 - 不要输出"默认浏览器风格"的简陋页面：要有完整的配色、排版层级、留白、组件细节、hover/active 状态与微交互。
+- 必须建立可见的 design system：:root CSS tokens（颜色/字体/圆角/阴影/间距）、页面背景、导航/标题区、内容容器、卡片、按钮、标签、输入/筛选、列表或图表至少覆盖其中 5 类；不要只堆文本。
+- ${platform === 'app' || platform === 'miniprogram' ? '移动端页面必须是竖屏体验：主容器 width:100%; max-width:430px 或 375px；min-height:100vh；底部导航/顶部栏/安全区按产品需要处理；不要出现桌面横向大网格。' : 'Web 页面必须有清晰桌面布局和窄屏断点，不要把移动端单列硬拉宽。'}
 - 页面必须自包含、覆盖常见状态（加载 / 空 / 错误 / 交互态，参考 page.states）。
 - 使用语义化 HTML、现代 CSS；JS 只为必要交互，不依赖任何外部脚本或 CDN（可用 data-uri / 纯 CSS 占位图，不要外链图片）。
 - notes 必须写出 3-6 条“DNA 到代码”的映射，例如某个色值用于哪个元素、某个圆角/阴影如何落地。
@@ -1005,6 +1007,7 @@ ${pageStr}
 - 必须实现 page.sections 与 page.components，并覆盖 page.states 描述的状态。
 - 按参考约束执行：${referenceRule}
 - 严格复用设计 DNA 与大爆炸具体因子的具体数值（色板十六进制、字体、圆角、阴影、间距、渐变）；遵守 globalStyle.avoid 列表。
+- CSS 必须包含明确的视觉 token 和组件状态：hover / active / selected / disabled / loading / empty / error 中至少覆盖 4 种。
 - 不要把图像提示词或图片描述当成 UI 生成主 prompt；它们只补充语义和内容方向。
 - 成品要体现参考素材的视觉基线，避免简陋的无样式默认外观。
 - notes 说明“DNA 到代码”的映射，validationChecklist 给出可自检的验收项。`
