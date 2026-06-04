@@ -148,12 +148,9 @@ async function resolveVertexEndpoint(env, model) {
 async function enforceVertexAccess(env, userId) {
   if (!env.DB) return json({ error: 'Vertex 访问校验失败：数据库不可用' }, 500)
   const acc = await env.DB.prepare(
-    'SELECT enabled, daily_limit, expires_at FROM vertex_access WHERE user_id = ?'
+    'SELECT enabled, daily_limit FROM vertex_access WHERE user_id = ?'
   ).bind(userId).first()
   if (!acc || !acc.enabled) return json({ error: '你没有使用 Vertex 的权限' }, 403)
-  if (acc.expires_at && Date.parse(acc.expires_at) < Date.now()) {
-    return json({ error: 'Vertex 访问已过期' }, 403)
-  }
   const day = new Date().toISOString().slice(0, 10)
   const usage = await env.DB.prepare(
     'SELECT count FROM vertex_usage WHERE user_id = ? AND day = ?'
