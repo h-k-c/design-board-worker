@@ -709,6 +709,7 @@ async function handleAI(req, env) {
     page = null,
     current = null,
     instruction = '',
+    fastMode = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
@@ -1006,6 +1007,53 @@ ${context || '（无）'}
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+    if (fastMode) {
+      const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面，优先速度和可解析性，但不能降低视觉完成度。
+硬约束：
+- ${pf.rules}
+- 固定视口 ${viewport.width}x${viewport.height}；移动端根内容 width:100%，不要写更小 max-width 居中壳。
+- 严格复用给定 DNA / 大爆炸因子的色值、字体、圆角、阴影、间距和组件语言；缺口才合理补齐。
+- 如果 uiContract.sharedShell 已存在，只生成 pageContent；如果 sharedComponents 非空但 sharedShell 不存在，同时生成 sharedShell + pageContent。
+- 输出真实页面内容，禁止灰色占位块、Lorem ipsum、示例标题、空白卡片。
+- 每个 page.sections 分区必须有 <section data-block="slug" data-block-label="中文标签">，CSS 用 /* block:slug */ 定界。
+- 严格只返回 JSON 对象，不要 Markdown、解释、thought。`
+      const userPrompt = `appName: ${appName || ''}
+designIntent: ${designIntent || ''}
+platform: ${pf.label}
+
+高置信设计证据：
+${context || '（无）'}
+
+globalStyle:
+${styleStr}
+
+uiContract:
+${contractStr}
+
+page:
+${pageStr}
+
+返回 JSON 结构：
+{
+  "pageId": "home",
+  "title": "",
+  "html": "",
+  "css": "",
+  "js": "",
+  "sharedShell": null,
+  "pageContent": { "html": "", "css": "", "js": "" },
+  "notes": []
+}
+
+生成要求：
+- pageId 与 page.id 一致。
+- 页面主体至少包含 6-10 个真实中文内容单元，体现 page.sections / page.components / page.states。
+- CSS 要有 :root tokens、背景、导航/标题区、卡片、按钮/标签、列表或统计、selected/loading/empty/error/hover 中至少 4 种状态。
+- 移动端页面内部不得出现小于设计视口的 max-width 居中容器。
+- notes 只保留 2-4 条 DNA 到代码映射。`
+      const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 4)
+      return { systemPrompt, userPrompt, imageUrls }
+    }
     const systemPrompt = `你是一名资深 UI 工程师，能把参考视觉精确迁移到可运行界面。你将为一个 ${pf.label} 产品的"单个页面"生成完整、自包含、可直接预览的前端代码。
 要求：
 - 目标平台「${pf.label}」：${pf.rules}
@@ -1279,7 +1327,7 @@ ${styleStr}
         // page-plan bumped to 8192: Gemini 2.5/3.x "thinking" models spend part
         // of the budget reasoning, so a 4096 cap could truncate the JSON before
         // the plan is emitted → unparseable result.
-        max_tokens: (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         // Always stream. Non-streaming long generations get killed by idle
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
@@ -1301,18 +1349,29 @@ ${styleStr}
       if (wantsJson && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
+      if (provider === 'google' && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
+        body.reasoning_effort = /gemini-2\.5/i.test(String(modelName || '')) ? 'none' : 'minimal'
+      }
       const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000 : mode === 'page-plan' ? 150000 : 70000
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       let res
       const providerStartedAt = Date.now()
       try {
-        res = await fetch(apiUrl, {
+        const makeRequest = () => fetch(apiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
           body: JSON.stringify(body),
           signal: controller.signal,
         })
+        res = await makeRequest()
+        if (!res.ok && body.reasoning_effort) {
+          const clone = await res.clone().text().catch(() => '')
+          if (/reasoning_effort|unsupported|unknown|unrecognized|extra/i.test(clone)) {
+            delete body.reasoning_effort
+            res = await makeRequest()
+          }
+        }
       } catch (e) {
         if (e.name === 'AbortError') {
           const err = new Error(`AI 请求超时（${Math.round(timeoutMs / 1000)}s）。模型生成页面太慢或供应商繁忙，请换更快的模型/降低页面复杂度后重试。`)
