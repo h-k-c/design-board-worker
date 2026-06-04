@@ -70,14 +70,11 @@ async function authMiddleware(req, env) {
   return verifyJWT(token, env.JWT_SECRET)
 }
 
-// ── Vertex AI (Google OAuth) ──
-// The Vertex provider authenticates with a Google credential stored ONLY as the
-// VERTEX_SA_JSON worker secret (never in the browser/DB/logs). Two credential
-// shapes are supported — orgs that disallow API keys / SA-key downloads require
-// ADC user credentials, so we accept both:
-//   • service_account  → sign a JWT with the private key (RS256) → token
-//   • authorized_user  → exchange the refresh_token (ADC) → token
-// The short-lived access token is cached in-isolate until shortly before expiry.
+// ── Vertex AI (service-account OAuth) ──
+// The Vertex provider authenticates with a Google service-account key (stored
+// ONLY as the VERTEX_SA_JSON worker secret — never in the browser/DB/logs). We
+// sign a JWT with the SA private key (RS256) and exchange it for a short-lived
+// OAuth access token, cached in-isolate until shortly before it expires.
 let vertexTokenCache = { token: '', exp: 0 }
 
 function pemToPkcs8(pem) {
@@ -91,42 +88,29 @@ function pemToPkcs8(pem) {
   return buf.buffer
 }
 
-async function mintGoogleAccessToken(cred) {
+async function mintGoogleAccessToken(sa) {
   const now = Math.floor(Date.now() / 1000)
   if (vertexTokenCache.token && vertexTokenCache.exp > now + 60) return vertexTokenCache.token
-  const tokenUri = cred.token_uri || 'https://oauth2.googleapis.com/token'
-
-  let body
-  if (cred.type === 'authorized_user') {
-    // ADC user credential (gcloud auth application-default login): refresh grant.
-    body = `grant_type=refresh_token`
-      + `&client_id=${encodeURIComponent(cred.client_id)}`
-      + `&client_secret=${encodeURIComponent(cred.client_secret)}`
-      + `&refresh_token=${encodeURIComponent(cred.refresh_token)}`
-  } else {
-    // Service account key: signed JWT bearer grant.
-    const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })))
-    const claims = b64url(new TextEncoder().encode(JSON.stringify({
-      iss: cred.client_email,
-      scope: 'https://www.googleapis.com/auth/cloud-platform',
-      aud: tokenUri,
-      iat: now,
-      exp: now + 3600,
-    })))
-    const signingInput = `${header}.${claims}`
-    const key = await crypto.subtle.importKey(
-      'pkcs8', pemToPkcs8(cred.private_key),
-      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
-    )
-    const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput))
-    const assertion = `${signingInput}.${b64url(sig)}`
-    body = `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`
-  }
-
+  const tokenUri = sa.token_uri || 'https://oauth2.googleapis.com/token'
+  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })))
+  const claims = b64url(new TextEncoder().encode(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: tokenUri,
+    iat: now,
+    exp: now + 3600,
+  })))
+  const signingInput = `${header}.${claims}`
+  const key = await crypto.subtle.importKey(
+    'pkcs8', pemToPkcs8(sa.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
+  )
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput))
+  const assertion = `${signingInput}.${b64url(sig)}`
   const res = await fetch(tokenUri, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
+    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok || !data.access_token) {
@@ -139,30 +123,24 @@ async function mintGoogleAccessToken(cred) {
 }
 
 // Resolve the OpenAI-compatible Vertex endpoint + bearer token + model id.
-// Returns extra headers (quota project) needed when using ADC user credentials.
 async function resolveVertexEndpoint(env, model) {
   if (!env.VERTEX_SA_JSON) {
     const err = new Error('Vertex 未配置：请设置 VERTEX_SA_JSON secret')
     err.status = 500
     throw err
   }
-  let cred
-  try { cred = JSON.parse(env.VERTEX_SA_JSON) } catch {
+  let sa
+  try { sa = JSON.parse(env.VERTEX_SA_JSON) } catch {
     const err = new Error('VERTEX_SA_JSON 不是合法 JSON'); err.status = 500; throw err
   }
   const location = env.VERTEX_LOCATION || 'us-central1'
-  const projectId = cred.project_id || cred.quota_project_id
-  if (!projectId) {
-    const err = new Error('Vertex 凭证缺少 project_id / quota_project_id'); err.status = 500; throw err
-  }
+  const projectId = sa.project_id
   const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`
   const apiUrl = `https://${host}/v1beta1/projects/${projectId}/locations/${location}/endpoints/openapi/chat/completions`
-  const token = await mintGoogleAccessToken(cred)
+  const token = await mintGoogleAccessToken(sa)
   let m = model || 'gemini-2.5-flash'
   if (!m.startsWith('google/')) m = `google/${m}`
-  // User (ADC) credentials need the quota project header for Vertex billing/quota.
-  const headers = { 'x-goog-user-project': projectId }
-  return { apiUrl, key: token, model: m, headers }
+  return { apiUrl, key: token, model: m }
 }
 
 // Gate the shared Vertex provider: allowlist + per-user daily cap. Returns null
@@ -1386,7 +1364,7 @@ ${styleStr}
   try {
     let result = ''
 
-    async function callOpenAICompat(apiUrl, apiKey, modelName, onDelta, extraHeaders) {
+    async function callOpenAICompat(apiUrl, apiKey, modelName, onDelta) {
       if (!apiKey) {
         const err = new Error('缺少接口密钥，请在设置中填写。')
         err.status = 400
@@ -1437,7 +1415,7 @@ ${styleStr}
       try {
         res = await fetch(apiUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...(extraHeaders || {}) },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
           body: JSON.stringify(body),
           signal: controller.signal,
         })
@@ -1533,7 +1511,7 @@ ${styleStr}
         try {
           await callOpenAICompat(ep.apiUrl, ep.key, ep.model, (delta) => {
             writer.write(enc.encode(delta)).catch(() => {})
-          }, ep.headers)
+          })
         } catch (e) {
           await writer.write(enc.encode('__DB_AI_ERROR__:' + (e.message || 'AI 请求失败'))).catch(() => {})
         } finally {
@@ -1553,7 +1531,7 @@ ${styleStr}
 
     if (provider !== 'ollama') {
       if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
-      result = await callOpenAICompat(ep.apiUrl, ep.key, ep.model, undefined, ep.headers)
+      result = await callOpenAICompat(ep.apiUrl, ep.key, ep.model)
     } else if (provider === 'ollama') {
       const localBase = (baseUrl || ollamaUrl || 'http://localhost:11434').replace(/\/$/, '')
       const b64Images = []
