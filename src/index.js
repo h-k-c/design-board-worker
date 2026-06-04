@@ -130,12 +130,8 @@ async function mintGoogleAccessToken(cred) {
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok || !data.access_token) {
-    // invalid_grant = the ADC refresh token was revoked/expired.
-    const expired = data.error === 'invalid_grant'
-    const err = new Error(expired
-      ? 'Vertex 凭证已失效，请重新登录 gcloud 并更新密钥，或先切换到其他模型继续使用。'
-      : 'Vertex token 获取失败: ' + (data.error_description || data.error || `HTTP ${res.status}`))
-    err.status = expired ? 401 : 502
+    const err = new Error('Vertex token 获取失败: ' + (data.error_description || data.error || `HTTP ${res.status}`))
+    err.status = 502
     throw err
   }
   vertexTokenCache = { token: data.access_token, exp: now + (Number(data.expires_in) || 3600) }
