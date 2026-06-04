@@ -1274,7 +1274,10 @@ ${styleStr}
       const body = {
         model: modelName,
         messages: [{ role: 'user', content }],
-        max_tokens: (mode === 'page-generate' || mode === 'page-edit') ? 8192 : (mode === 'page-plan' || mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        // page-plan bumped to 8192: Gemini 2.5/3.x "thinking" models spend part
+        // of the budget reasoning, so a 4096 cap could truncate the JSON before
+        // the plan is emitted → unparseable result.
+        max_tokens: (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         // Always stream. Non-streaming long generations get killed by idle
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
@@ -1289,7 +1292,11 @@ ${styleStr}
       // response_format or handle large JSON worse when it is enabled. Page
       // generation/edit prompts already require strict JSON and the frontend
       // parser is tolerant, so only force response_format for smaller JSON jobs.
-      if (wantsJson && !needsStableJson) {
+      // EXCEPTION: Gemini (google) handles json_object mode reliably and tends
+      // to otherwise wrap output in prose / markdown / thinking — which makes
+      // the page-plan/generate result unparseable. Force JSON mode for Gemini
+      // on every JSON task.
+      if (wantsJson && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
       const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000 : mode === 'page-plan' ? 150000 : 70000
@@ -1357,6 +1364,7 @@ ${styleStr}
         err.status = 502
         throw err
       }
+      console.log(`[AI] done mode=${mode} provider=${provider} model=${modelName} len=${text.length} head=${JSON.stringify(text.slice(0, 200))}`)
       return text
     }
 
