@@ -710,6 +710,7 @@ async function handleAI(req, env) {
     current = null,
     instruction = '',
     fastMode = false,
+    streamPreview = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
@@ -1007,6 +1008,47 @@ ${context || '（无）'}
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+    if (streamPreview) {
+      const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面。你必须按分段协议输出，方便浏览器边接收边渲染。
+硬约束：
+- ${pf.rules}
+- 固定视口 ${viewport.width}x${viewport.height}；移动端根内容 width:100%，不要写更小 max-width 居中壳。
+- 严格复用给定 DNA / 大爆炸因子的色值、字体、圆角、阴影、间距和组件语言；缺口才合理补齐。
+- 输出真实页面内容，禁止灰色占位块、Lorem ipsum、示例标题、空白卡片。
+- 每个 page.sections 分区必须有 <section data-block="slug" data-block-label="中文标签">。
+- 不要输出 JSON、Markdown 代码块、解释、thought。只输出协议标签和标签内容。`
+      const userPrompt = `appName: ${appName || ''}
+designIntent: ${designIntent || ''}
+platform: ${pf.label}
+
+高置信设计证据：
+${context || '（无）'}
+
+globalStyle:
+${styleStr}
+
+uiContract:
+${contractStr}
+
+page:
+${pageStr}
+
+请严格按下面顺序输出：
+<style>
+完整 CSS。先写 :root tokens、reset、平台视口、背景、导航/标题区、卡片、按钮/标签、列表/统计、hover/active/selected/loading/empty/error 等状态。每个 page.sections 对应 CSS 用 /* block:slug */ 定界。
+</style>
+<body>
+完整页面 HTML。必须包含 6-10 个真实中文内容单元，体现 page.sections / page.components / page.states。每个主要分区用 <section data-block="slug" data-block-label="中文标签"> 包住。
+</body>
+<script>
+必要 JS；没有交互就留空。
+</script>
+<notes>
+2-4 条 DNA 到代码映射，简短中文。
+</notes>`
+      const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 4)
+      return { systemPrompt, userPrompt, imageUrls }
+    }
     if (fastMode) {
       const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面，优先速度和可解析性，但不能降低视觉完成度。
 硬约束：
@@ -1319,8 +1361,8 @@ ${styleStr}
           ]
         : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
       // Explosion + page modes return JSON — force JSON output format
-      const wantsJson = ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)
-      const needsStableJson = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
+      const wantsJson = !streamPreview && ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)
+      const needsStableJson = !streamPreview && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
       const body = {
         model: modelName,
         messages: [{ role: 'user', content }],
