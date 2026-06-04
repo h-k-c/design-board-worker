@@ -70,102 +70,6 @@ async function authMiddleware(req, env) {
   return verifyJWT(token, env.JWT_SECRET)
 }
 
-// ── Vertex AI (service-account OAuth) ──
-// The Vertex provider authenticates with a Google service-account key (stored
-// ONLY as the VERTEX_SA_JSON worker secret — never in the browser/DB/logs). We
-// sign a JWT with the SA private key (RS256) and exchange it for a short-lived
-// OAuth access token, cached in-isolate until shortly before it expires.
-let vertexTokenCache = { token: '', exp: 0 }
-
-function pemToPkcs8(pem) {
-  const b64 = String(pem || '')
-    .replace(/-----BEGIN [^-]+-----/g, '')
-    .replace(/-----END [^-]+-----/g, '')
-    .replace(/\s+/g, '')
-  const bin = atob(b64)
-  const buf = new Uint8Array(bin.length)
-  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i)
-  return buf.buffer
-}
-
-async function mintGoogleAccessToken(sa) {
-  const now = Math.floor(Date.now() / 1000)
-  if (vertexTokenCache.token && vertexTokenCache.exp > now + 60) return vertexTokenCache.token
-  const tokenUri = sa.token_uri || 'https://oauth2.googleapis.com/token'
-  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })))
-  const claims = b64url(new TextEncoder().encode(JSON.stringify({
-    iss: sa.client_email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: tokenUri,
-    iat: now,
-    exp: now + 3600,
-  })))
-  const signingInput = `${header}.${claims}`
-  const key = await crypto.subtle.importKey(
-    'pkcs8', pemToPkcs8(sa.private_key),
-    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']
-  )
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(signingInput))
-  const assertion = `${signingInput}.${b64url(sig)}`
-  const res = await fetch(tokenUri, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=${encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer')}&assertion=${assertion}`,
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok || !data.access_token) {
-    const err = new Error('Vertex token 获取失败: ' + (data.error_description || data.error || `HTTP ${res.status}`))
-    err.status = 502
-    throw err
-  }
-  vertexTokenCache = { token: data.access_token, exp: now + (Number(data.expires_in) || 3600) }
-  return data.access_token
-}
-
-// Resolve the OpenAI-compatible Vertex endpoint + bearer token + model id.
-async function resolveVertexEndpoint(env, model) {
-  if (!env.VERTEX_SA_JSON) {
-    const err = new Error('Vertex 未配置：请设置 VERTEX_SA_JSON secret')
-    err.status = 500
-    throw err
-  }
-  let sa
-  try { sa = JSON.parse(env.VERTEX_SA_JSON) } catch {
-    const err = new Error('VERTEX_SA_JSON 不是合法 JSON'); err.status = 500; throw err
-  }
-  const location = env.VERTEX_LOCATION || 'us-central1'
-  const projectId = sa.project_id
-  const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`
-  const apiUrl = `https://${host}/v1beta1/projects/${projectId}/locations/${location}/endpoints/openapi/chat/completions`
-  const token = await mintGoogleAccessToken(sa)
-  let m = model || 'gemini-2.5-flash'
-  if (!m.startsWith('google/')) m = `google/${m}`
-  return { apiUrl, key: token, model: m }
-}
-
-// Gate the shared Vertex provider: allowlist + per-user daily cap. Returns null
-// if allowed, or a Response (403/429) to short-circuit. Counts the call on pass.
-async function enforceVertexAccess(env, userId) {
-  if (!env.DB) return json({ error: 'Vertex 访问校验失败：数据库不可用' }, 500)
-  const acc = await env.DB.prepare(
-    'SELECT enabled, daily_limit FROM vertex_access WHERE user_id = ?'
-  ).bind(userId).first()
-  if (!acc || !acc.enabled) return json({ error: '你没有使用 Vertex 的权限' }, 403)
-  const day = new Date().toISOString().slice(0, 10)
-  const usage = await env.DB.prepare(
-    'SELECT count FROM vertex_usage WHERE user_id = ? AND day = ?'
-  ).bind(userId, day).first()
-  const used = Number(usage?.count) || 0
-  if (acc.daily_limit && used >= acc.daily_limit) {
-    return json({ error: `今日 Vertex 调用已达上限（${acc.daily_limit} 次/天）` }, 429)
-  }
-  await env.DB.prepare(
-    `INSERT INTO vertex_usage (user_id, day, count) VALUES (?, ?, 1)
-     ON CONFLICT(user_id, day) DO UPDATE SET count = count + 1`
-  ).bind(userId, day).run()
-  return null
-}
-
 // ── Helpers ──
 
 async function hashPassword(salt, password) {
@@ -777,7 +681,7 @@ async function resolveImageUrl(imageUrl, env) {
   return imageUrl
 }
 
-async function handleAI(req, env, userId) {
+async function handleAI(req, env) {
   const startedAt = Date.now()
   const {
     mode = 'single',
@@ -810,12 +714,6 @@ async function handleAI(req, env, userId) {
     blockHtml = '',
     blockCss = '',
   } = await req.json()
-
-  // Shared Vertex provider spends the owner's credit → allowlist + daily cap.
-  if (provider === 'vertex') {
-    const denied = await enforceVertexAccess(env, userId)
-    if (denied) return denied
-  }
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
@@ -1348,7 +1246,6 @@ ${styleStr}
     zhipu:      { vl: 'glm-4v',                          llm: 'glm-4-plus' },
     mi:         { vl: 'mimo-v2-omni',                    llm: 'mimo-v2-flash' },
     google:     { vl: 'gemini-2.5-flash',                llm: 'gemini-2.5-flash' },
-    vertex:     { vl: 'gemini-2.5-flash',                llm: 'gemini-2.5-flash' },
   }
   const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
   const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
@@ -1489,17 +1386,12 @@ ${styleStr}
       }
     }
 
-    // Resolve the endpoint once. Vertex needs an async OAuth token + a project-
-    // /location-specific URL, so it can't go through the sync resolveEndpoint().
-    const ep = provider === 'ollama'
-      ? null
-      : (provider === 'vertex' ? await resolveVertexEndpoint(env, resolvedModel) : resolveEndpoint())
-
     // Slow page-generation modes stream the result straight back to the
     // browser. Keeping bytes flowing prevents the edge / client connection
     // from timing out on slow models (Gemma, DeepSeek under load, etc).
     const streamToClient = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
     if (provider !== 'ollama' && streamToClient) {
+      const ep = resolveEndpoint()
       if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
       const { readable, writable } = new TransformStream()
       const writer = writable.getWriter()
@@ -1527,6 +1419,7 @@ ${styleStr}
     }
 
     if (provider !== 'ollama') {
+      const ep = resolveEndpoint()
       if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
       result = await callOpenAICompat(ep.apiUrl, ep.key, ep.model)
     } else if (provider === 'ollama') {
@@ -1627,7 +1520,7 @@ export default {
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
-    if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env, userId)
+    if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env)
 
     // Generated pages (Phase 2 durable persistence)
     if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env, userId)
