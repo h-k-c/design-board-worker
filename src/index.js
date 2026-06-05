@@ -712,6 +712,7 @@ async function handleAI(req, env) {
     fastMode = false,
     streamPreview = false,
     compositionMode = false,
+    directHtml = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
@@ -964,15 +965,6 @@ ${context || '（无）'}
     "motionRules": [],
     "avoid": []
   },
-  "uiContract": {
-    "version": 1,
-    "viewport": { "platform": "${platform}", "width": ${viewport.width}, "height": ${viewport.height}, "scaleMode": "${platform === 'web' ? 'responsive' : 'fixed'}" },
-    "tokens": {},
-    "sharedComponents": [
-      { "id": "", "type": "", "placement": "", "props": {} }
-    ],
-    "rules": []
-  },
   "pages": [
     {
       "id": "home",
@@ -1001,9 +993,7 @@ ${context || '（无）'}
 - 页面数量必须在 1-${effectivePageLimit} 个之间。${planScope === 'single' ? '只能输出 1 个页面。' : '超过上限时合并次要页面。'}
 - appName / designIntent 用简洁中文概括产品与设计意图。
 - globalStyle 必须从设计 DNA 与大爆炸具体因子中提炼出可复用的全局规范，并尽量保留主证据里的**具体数值**（色板十六进制、字体族与字号、圆角、阴影、间距、动效缓动）。
-- uiContract 是跨时间持久化的项目 UI 契约，不是单次页面描述：viewport 必须使用上方给定平台宽高；tokens 复用 globalStyle 的具体数值；sharedComponents 只描述本项目多页面应复用的全局组件（例如 topbar、bottom-nav、sidebar、searchbar、filterbar、card-list、floating-action），不要为单页内容创建共享组件。
-- sharedComponents 必须是动态识别结果：如果产品需要底部导航就输出 bottom-nav；如果需要顶部导航/侧边栏/搜索栏也要输出；不要把底栏当成唯一可能的共享组件。props 中描述 tabs/items/icons/activeKeySource/slot 等可变属性。
-- 每个 page 可用 navKey / shellState 指明共享组件的 active 状态，但不要让每个页面重新生成同一份共享组件。
+- 每个页面都会被独立生成为一份自包含界面：如果产品需要全局导航（顶部/底部/侧边），就在相应页面的 sections / components 里写明，并用 navKey 标注当前页的激活项，保证各页导航文案一致。
 - 图像提示词、图片描述、单图 AI 分析只能帮助理解产品语义和氛围，不得作为主要视觉规范。
 - globalStyle.layout 要体现 ${pf.label} 的形态约束。
 - 每个 page 的 sections / components / states 用具体的**简体中文**短语数组（例如「顶部横幅」「错题卡片列表」「批量管理」），不要用英文短语。
@@ -1018,6 +1008,72 @@ ${context || '（无）'}
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+    if (directHtml) {
+      const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师，作品达到 Dribbble / Mobbin 精选水准。你将为「${pf.label}」产品的单个页面，直接产出一份自包含、可立即预览、视觉精致的前端代码（HTML + 内联 CSS + 必要 JS）。不要线框图、不要示意稿，要像真实上线产品的第一屏。
+
+## 平台约束
+- ${pf.rules}
+- 固定设计视口 ${viewport.width}x${viewport.height}。移动端根容器 width:100%、min-height:100vh 铺满，禁止更小的 max-width 居中壳导致左右留白；Web 才可用居中容器。
+
+## 视觉证据优先级（最重要）
+- ${evidencePriority}
+- ${referenceRule}
+- 设计 DNA / 大爆炸具体因子是**最高优先级视觉规范**：必须把其中的具体色值(#RRGGBB)、字体族/字号/字重、圆角、阴影 box-shadow、间距、渐变、毛玻璃、质感直接落到 CSS。globalStyle 是它的结构化摘要，冲突时以 DNA 具体值为准。
+
+## 设计系统纪律（决定"高级感"，必须严格遵守）
+1. **令牌化**：在 :root 定义全部设计 token（colors / spacing / radius / shadow / font）。所有数值都引用 token，不要散落魔法数。
+2. **间距用 8pt 体系**：4/8/12/16/24/32/48/64。同组元素间距一致，区块之间留白要慷慨、有呼吸感。
+3. **字阶有明确层级**：至少 4 级字号 + 字重对比（如 13/15/20/28，weight 400/500/700），正文行高 1.5–1.7，标题更紧。一屏内信息层级 ≥3 层。
+4. **克制配色**：以 DNA 主色 + 中性灰阶为主，强调色只用在关键 CTA / 选中态，不要彩虹色。对比度达到 WCAG AA。
+5. **一个视觉焦点**：首屏有明确主视觉/主操作，其余元素服从它，不要平铺堆砌。
+6. **组件细节**：圆角统一、阴影柔和有层次（避免生硬黑边）、边框用低对比分隔线、交互元素有 hover/active/focus 态。
+7. **真实内容**：所有文案、数字、列表项、标签都是贴合产品的具体中文内容。严禁 Lorem ipsum、"示例标题"、"暂无内容"、大面积灰色占位块。没有真实图片时用 CSS 渐变、内联 SVG 图标、纯 CSS 插画/数据可视化形状替代。
+8. **状态完整**：覆盖 page.states，至少实现 hover / active / selected / empty / loading / error 中的 4 种。
+
+## 内容要求
+- 必须实现 page.sections / page.components，整页 8–14 个具体内容单元，不同 pageType 要有不同构图（详情页强调阅读区、列表页强调浏览、表单页强调流程、概览页强调数据）。
+- 必须建立可见的 design system：导航/标题区、内容容器、卡片、按钮、标签、列表/图表至少覆盖 5 类。
+
+## 块级可编辑结构（强制，供后续局部编辑）
+- 每个 page.sections 逻辑分区包成 \`<section data-block="<kebab-slug>" data-block-label="<简短中文标签>"> ... </section>\`，slug 页面内唯一、语义化（如 hero / category-nav / article-body），不嵌套块、不漏分区。
+- CSS 中每个块的规则用 \`/* block:<slug> */ ... /* /block:<slug> */\` 注释定界；:root / reset / 共享基础样式放在 CSS 最顶部，不被任何 block 注释包裹。
+
+## 技术约束
+- 自包含、可直接渲染在沙箱 iframe 内。JS 只为必要交互（标签切换、展开等），写在 js 字段，**不依赖任何外部脚本/CDN/远程字体**（外链脚本会被安全策略剥离）。可用 https 图片 URL、data-uri、内联 SVG、纯 CSS 图形。
+- 语义化 HTML、现代 CSS（flex/grid、变量、clamp）。
+- 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要解释、不要 thinking。`
+      const userPrompt = `产品名（appName）：${appName || ''}
+设计意图（designIntent）：${designIntent || ''}
+目标平台（platform）：${pf.label}
+
+设计 DNA / 大爆炸因子 / 辅助语义证据（DNA 与大爆炸具体因子为最高优先级视觉规范）：
+${context || '（无，按 globalStyle 与 designIntent 合理发挥，仍须完整精致的视觉）'}
+
+全局风格摘要（globalStyle）：
+${styleStr}
+
+当前要生成的页面（page）：
+${pageStr}
+
+请输出严格符合下面结构的 JSON（字段名必须完全一致）：
+{
+  "pageId": "${page?.id || 'home'}",
+  "title": "页面中文标题",
+  "html": "完整页面 body 内 HTML，按上面块级结构组织",
+  "css": "完整 CSS：:root tokens 在最顶部，每个块用 /* block:slug */ 定界",
+  "js": "必要交互 JS，可为空字符串",
+  "notes": ["2-4 条 DNA 到代码的映射，简短中文"]
+}
+
+约束：
+- pageId 与 page.id 一致；title 用简洁中文。
+- html 不要包含 <html>/<head>/<body> 外壳，只输出 body 内部内容（页面级 wrapper 可有）。
+- 严格复用 DNA / 大爆炸的具体数值；遵守 globalStyle.avoid。
+- 不要使用大面积 #e5e7eb / #f3f4f6 灰块充当图片或内容。
+- 再次强调：除技术标识符和 CSS 值外，所有面向人阅读的文本一律简体中文。`
+      const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 6)
+      return { systemPrompt, userPrompt, imageUrls }
+    }
     if (compositionMode) {
       const systemPrompt = `你是一名顶级 AI 产品视觉设计师。你的任务不是写 HTML/CSS，而是先让"整个页面画面"成立，再把它拆成带布局约束的组件树。
 核心原则：
