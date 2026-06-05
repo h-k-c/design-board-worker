@@ -981,6 +981,14 @@ ${context || '（无）'}
       "sections": [],
       "components": [],
       "states": [],
+      "layoutIr": {
+        "version": 1,
+        "intent": "",
+        "regions": [
+          { "id": "topbar", "type": "header", "label": "顶部导航", "x": 0, "y": 0, "w": ${viewport.width}, "h": 56 },
+          { "id": "content", "type": "list", "label": "主体内容", "x": 18, "y": 76, "w": ${Math.max(320, viewport.width - 36)}, "h": 360 }
+        ]
+      },
       "navKey": "",
       "responsiveNotes": "",
       "evidenceIds": []
@@ -998,6 +1006,7 @@ ${context || '（无）'}
 - 图像提示词、图片描述、单图 AI 分析只能帮助理解产品语义和氛围，不得作为主要视觉规范。
 - globalStyle.layout 要体现 ${pf.label} 的形态约束。
 - 每个 page 的 sections / components / states 用具体的**简体中文**短语数组（例如「顶部横幅」「错题卡片列表」「批量管理」），不要用英文短语。
+- 每个 page 必须输出 layoutIr：它是给前端绘制“页面正在被画出来”的轻量蓝图，不是最终代码。regions 只描述 5-10 个主要视觉区块的位置、尺寸、类型、中文标签和意图，坐标必须使用当前固定视口像素：x/y/w/h 都是数字。移动端宽度必须贴合 ${viewport.width}px；Web 可按 ${viewport.width}px 设计视口。type 可用 header、hero、tabs、grid、list、card、chart、form、tabbar、action、text、media 等。layoutIr 不要输出 HTML/CSS，不要写长文。
 - 再次强调：除 id / route / navKey / slug / CSS 值外，所有词条文本必须是简体中文。
 - 不要输出任何代码。`
     const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
