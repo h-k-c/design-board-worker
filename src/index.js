@@ -1046,16 +1046,17 @@ ${pageStr}
 请严格按下面协议逐行输出 NDJSON。每行都是一个完整 JSON 对象；不要把一个 JSON 对象拆成多行；字符串里的换行必须转义为 \\n。
 
 第一行必须输出全局基础区块：
-{"type":"block","blockId":"page-base","order":0,"label":"页面基础","html":"<div data-block=\\"page-base\\" data-block-label=\\"页面基础\\" hidden></div>","css":"完整 :root tokens、html/body、页面背景、字体、viewport 基础、通用按钮/标签/卡片状态。不要写当前页面具体内容。","js":""}
+{"type":"block","blockId":"page-base","order":0,"label":"页面基础","rect":{"x":0,"y":0,"w":${viewport.width},"h":${viewport.height}},"html":"<div data-block=\\"page-base\\" data-block-label=\\"页面基础\\" hidden></div>","css":"完整 :root tokens、html/body、页面背景、字体、viewport 基础、通用按钮/标签/卡片状态。不要写当前页面具体内容。","js":""}
 
 之后按视觉顺序输出 5-10 个页面区块：
-{"type":"block","blockId":"hero","order":10,"label":"顶部重点","html":"<section data-block=\\"hero\\" data-block-label=\\"顶部重点\\">完整且真实的中文 UI 内容...</section>","css":"/* block:hero */\\n[data-block=\\"hero\\"]{...}\\n/* /block:hero */","js":""}
+{"type":"block","blockId":"hero","order":10,"label":"顶部重点","rect":{"x":24,"y":88,"w":${Math.max(1, viewport.width - 48)},"h":160},"html":"<section data-block=\\"hero\\" data-block-label=\\"顶部重点\\">完整且真实的中文 UI 内容...</section>","css":"/* block:hero */\\n[data-block=\\"hero\\"]{...}\\n/* /block:hero */","js":""}
 
 最后一行输出完成事件：
 {"type":"done","meta":{"notes":["2-4 条 DNA 到代码映射，简短中文"]}}
 
 区块要求：
 - 必须覆盖 page.sections / page.components / page.states，整体至少 8-14 个具体中文内容单元。
+- 每个内容 block 必须带 rect，坐标使用固定视口像素，x/y/w/h 都是数字；rect 要与该区块在页面中的真实位置和尺寸大致一致，不能互相重叠，不能超出 ${viewport.width}x${viewport.height}。
 - 如果需要底部导航/顶部导航，作为独立区块输出，order 靠前或靠后；同一项目的导航文案必须来自 uiContract/sharedComponents/page.navKey，不要自由改名。
 - 不要使用会裂开的远程图片；没有可靠图片时用 CSS 渐变、内联 SVG、主题纹理或色块插画。
 - 每个 block 必须完整闭合，不能输出半个标签后等待下一行补齐。`
