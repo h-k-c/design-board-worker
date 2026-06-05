@@ -1752,6 +1752,18 @@ export default {
   },
 
   async fetch(req, env) {
+    try {
+      return await handleRequest(req, env)
+    } catch (e) {
+      // Top-level safety net: any uncaught throw must still carry CORS headers,
+      // otherwise the browser reports a misleading "No Access-Control-Allow-Origin"
+      // error instead of the real failure.
+      return json({ error: '服务器内部错误：' + (e?.message || 'unknown') }, 500)
+    }
+  },
+}
+
+async function handleRequest(req, env) {
     const url = new URL(req.url)
     const path = url.pathname
 
@@ -1803,5 +1815,4 @@ export default {
     }
 
     return json({ error: '未找到接口' }, 404)
-  }
 }
