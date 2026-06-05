@@ -711,6 +711,7 @@ async function handleAI(req, env) {
     instruction = '',
     fastMode = false,
     streamPreview = false,
+    compositionMode = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
@@ -1017,6 +1018,95 @@ ${context || '（无）'}
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+    if (compositionMode) {
+      const systemPrompt = `你是一名顶级 AI 产品视觉设计师。你的任务不是写 HTML/CSS，而是先让"整个页面画面"成立，再把它拆成带布局约束的组件树。
+核心原则：
+- 先做 screen design，再做 component breakdown；不要先想组件库。
+- 每个组件必须知道自己在页面里的 x/y/w/h、视觉角色、信息密度和内容，不允许返回抽象占位。
+- ${pf.rules}
+- 固定设计视口 ${viewport.width}x${viewport.height}；所有 layout 坐标必须在该视口内，移动端必须按真实小程序/App 画面设计。
+- ${evidencePriority}
+- ${referenceRule}
+- 设计 DNA / 大爆炸具体因子是最高优先级视觉规范：必须复用其中的具体色值、字体、圆角、阴影、间距、质感和组件语言；缺口才补齐。
+- 页面之间要共享同一个 designSystem，但不同功能页必须有不同构图，不要用同一套 hero + list 套所有页面。
+- 输出要能被前端稳定编译：只返回 JSON，不要 Markdown，不要 HTML/CSS/JS，不要解释。`
+      const userPrompt = `产品名（appName）：${appName || ''}
+设计意图（designIntent）：${designIntent || ''}
+目标平台（platform）：${pf.label}
+
+高置信设计证据：
+${context || '（无）'}
+
+globalStyle:
+${styleStr}
+
+uiContract:
+${contractStr}
+
+当前页面 page:
+${pageStr}
+
+请严格返回这个 JSON 结构：
+{
+  "pageId": "home",
+  "title": "",
+  "composition": {
+    "version": 1,
+    "pageType": "home | categoryBrowser | articleDetail | favoritesManager | formFlow | dashboard | settings | custom",
+    "screen": {
+      "width": ${viewport.width},
+      "height": ${viewport.height},
+      "density": "calm | balanced | dense | editorial",
+      "visualFocus": "",
+      "layoutIdea": "",
+      "background": ""
+    },
+    "tokens": {
+      "primary": "",
+      "ink": "",
+      "muted": "",
+      "canvas": "",
+      "surface": "",
+      "line": "",
+      "radius": 18,
+      "shadow": ""
+    },
+    "components": [
+      {
+        "id": "stable-kebab-id",
+        "type": "header | tabbar | hero | categoryMenu | cardList | articleBody | stats | actionBar | searchBar | filterBar | form | media | custom",
+        "label": "中文标签",
+        "order": 0,
+        "layout": { "x": 0, "y": 0, "w": ${viewport.width}, "h": 72, "role": "navigation | primary-focus | content | action | support", "density": "calm | balanced | dense" },
+        "props": {
+          "title": "",
+          "subtitle": "",
+          "eyebrow": "",
+          "items": [],
+          "tabs": [],
+          "stats": [],
+          "actions": []
+        }
+      }
+    ],
+    "rationale": []
+  },
+  "notes": [],
+  "validationChecklist": []
+}
+
+强约束：
+- components 必须是 4-9 个主要视觉组件，按视觉顺序排列；每个组件 layout 都要有数字 x/y/w/h，不能超出 ${viewport.width}x${viewport.height}，重要组件不能互相重叠。
+- x/y/w/h 是这个组件在最终页面中的真实位置和尺寸，不是建议值；前端会按这些数值直接绘制。
+- pageType 要根据功能判断：分类/栏目页用 categoryBrowser；文章/详情页用 articleDetail；收藏/书签页用 favoritesManager；表单流程用 formFlow；数据概览用 dashboard。
+- 不同 pageType 必须有不同构图：详情页要强调阅读区，收藏页要强调管理/列表状态，分类页要强调导航与内容浏览。
+- 每个 props.items/tabs/stats/actions 都必须是具体中文内容，不要写"示例"、"占位"、"暂无"。
+- tokens 必须尽量来自 globalStyle / DNA 证据；没有时才补齐。颜色用 #RRGGBB。
+- notes 写 2-4 条"为什么这个页面这样构图"；validationChecklist 写 3-5 条可检查项。
+- 严格只返回 JSON 对象。`
+      const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 4)
+      return { systemPrompt, userPrompt, imageUrls }
+    }
     if (streamPreview) {
       const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面。你必须按 NDJSON 区块协议输出，方便浏览器收到一个完整区块就渲染一个完整区块。
 硬约束：
