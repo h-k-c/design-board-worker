@@ -1018,14 +1018,15 @@ ${context || '（无）'}
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
     if (streamPreview) {
-      const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面。你必须按分段协议输出，方便浏览器边接收边渲染。
+      const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面。你必须按 NDJSON 区块协议输出，方便浏览器收到一个完整区块就渲染一个完整区块。
 硬约束：
 - ${pf.rules}
 - 固定视口 ${viewport.width}x${viewport.height}；移动端根内容 width:100%，不要写更小 max-width 居中壳。
 - 严格复用给定 DNA / 大爆炸因子的色值、字体、圆角、阴影、间距和组件语言；缺口才合理补齐。
 - 输出真实页面内容，禁止灰色占位块、Lorem ipsum、示例标题、空白卡片。
-- 每个 page.sections 分区必须有 <section data-block="slug" data-block-label="中文标签">。
-- 不要输出 JSON、Markdown 代码块、解释、thought。只输出协议标签和标签内容。`
+- 每个区块必须是完整 outerHTML，最外层必须有 data-block="slug" 和 data-block-label="中文标签"。
+- 每个区块 CSS 只负责自己和必要的 :root/page 基础变量；选择器尽量以 [data-block="slug"] 开头。
+- 不要输出 Markdown 代码块、解释、thought、XML 标签或普通文本。只输出 NDJSON：每一行必须是一个完整 JSON 对象。`
       const userPrompt = `appName: ${appName || ''}
 designIntent: ${designIntent || ''}
 platform: ${pf.label}
@@ -1042,19 +1043,22 @@ ${contractStr}
 page:
 ${pageStr}
 
-请严格按下面顺序输出：
-<style>
-完整 CSS。先写 :root tokens、reset、平台视口、背景、导航/标题区、卡片、按钮/标签、列表/统计、hover/active/selected/loading/empty/error 等状态。每个 page.sections 对应 CSS 用 /* block:slug */ 定界。
-</style>
-<body>
-完整页面 HTML。必须包含 6-10 个真实中文内容单元，体现 page.sections / page.components / page.states。每个主要分区用 <section data-block="slug" data-block-label="中文标签"> 包住。
-</body>
-<script>
-必要 JS；没有交互就留空。
-</script>
-<notes>
-2-4 条 DNA 到代码映射，简短中文。
-</notes>`
+请严格按下面协议逐行输出 NDJSON。每行都是一个完整 JSON 对象；不要把一个 JSON 对象拆成多行；字符串里的换行必须转义为 \\n。
+
+第一行必须输出全局基础区块：
+{"type":"block","blockId":"page-base","order":0,"label":"页面基础","html":"<div data-block=\\"page-base\\" data-block-label=\\"页面基础\\" hidden></div>","css":"完整 :root tokens、html/body、页面背景、字体、viewport 基础、通用按钮/标签/卡片状态。不要写当前页面具体内容。","js":""}
+
+之后按视觉顺序输出 5-10 个页面区块：
+{"type":"block","blockId":"hero","order":10,"label":"顶部重点","html":"<section data-block=\\"hero\\" data-block-label=\\"顶部重点\\">完整且真实的中文 UI 内容...</section>","css":"/* block:hero */\\n[data-block=\\"hero\\"]{...}\\n/* /block:hero */","js":""}
+
+最后一行输出完成事件：
+{"type":"done","meta":{"notes":["2-4 条 DNA 到代码映射，简短中文"]}}
+
+区块要求：
+- 必须覆盖 page.sections / page.components / page.states，整体至少 8-14 个具体中文内容单元。
+- 如果需要底部导航/顶部导航，作为独立区块输出，order 靠前或靠后；同一项目的导航文案必须来自 uiContract/sharedComponents/page.navKey，不要自由改名。
+- 不要使用会裂开的远程图片；没有可靠图片时用 CSS 渐变、内联 SVG、主题纹理或色块插画。
+- 每个 block 必须完整闭合，不能输出半个标签后等待下一行补齐。`
       const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 4)
       return { systemPrompt, userPrompt, imageUrls }
     }
