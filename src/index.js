@@ -1164,15 +1164,29 @@ ${pageStr}
       return { systemPrompt, userPrompt, imageUrls }
     }
     if (streamPreview) {
-      const systemPrompt = `你是一名资深 UI 工程师。为 ${pf.label} 生成一个可直接预览的单页界面。你必须按 NDJSON 区块协议输出，方便浏览器收到一个完整区块就渲染一个完整区块。
-硬约束：
+      const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师，作品达到 Dribbble / Mobbin 精选水准。为「${pf.label}」生成一个视觉精致、可直接预览的单页界面。你必须按 NDJSON 区块协议输出，让浏览器收到一个完整区块就立刻渲染一块——所以区块顺序就是页面从上到下被"画"出来的顺序。
+
+## 平台与视口
 - ${pf.rules}
 - 固定视口 ${viewport.width}x${viewport.height}；移动端根内容 width:100%，不要写更小 max-width 居中壳。
-- 严格复用给定 DNA / 大爆炸因子的色值、字体、圆角、阴影、间距和组件语言；缺口才合理补齐。
-- 输出真实页面内容，禁止灰色占位块、Lorem ipsum、示例标题、空白卡片。
-- 每个区块必须是完整 outerHTML，最外层必须有 data-block="slug" 和 data-block-label="中文标签"。
-- 每个区块 CSS 只负责自己和必要的 :root/page 基础变量；选择器尽量以 [data-block="slug"] 开头。
-- 不要输出 Markdown 代码块、解释、thought、XML 标签或普通文本。只输出 NDJSON：每一行必须是一个完整 JSON 对象。`
+
+## 视觉证据优先级（最重要）
+- ${evidencePriority}
+- ${referenceRule}
+- 设计 DNA / 大爆炸具体因子是**最高优先级视觉规范**：必须复用其中的具体色值(#RRGGBB)、字体、圆角、阴影、间距、渐变、质感；缺口才补齐。
+
+## 设计系统纪律（决定高级感，严格遵守）
+- **令牌化**：page-base 区块的 CSS 里定义全部 :root token（colors/spacing/radius/shadow/font），后续区块只引用 token。
+- **8pt 间距体系**(4/8/12/16/24/32/48)，同组间距一致，区块之间留白慷慨。
+- **字阶分明**：≥4 级字号 + 字重对比，正文行高 1.5–1.7；一屏 ≥3 层信息层级。
+- **克制配色**：DNA 主色 + 中性灰阶，强调色只给关键 CTA/选中态，对比度达 AA。
+- **一个视觉焦点**，其余服从它；圆角统一、阴影柔和分层、交互元素有 hover/active 态。
+- **真实内容**：所有文案/数字/列表项都是贴合产品的具体中文，禁止灰色占位块、Lorem ipsum、示例标题、空白卡片。无图片时用 CSS 渐变、内联 SVG、纯 CSS 图形替代。
+
+## 输出协议
+- 每个区块必须是完整 outerHTML，最外层必须有 data-block="slug" 和 data-block-label="中文标签"，且自身完整闭合。
+- 每个区块 CSS 只负责自己；选择器尽量以 [data-block="slug"] 开头。:root/全局基础样式只放在 page-base 区块。
+- 不要 Markdown、解释、thought、XML 标签或普通文本。只输出 NDJSON：每一行是一个完整 JSON 对象，不要把一个对象拆成多行。`
       const userPrompt = `appName: ${appName || ''}
 designIntent: ${designIntent || ''}
 platform: ${pf.label}
