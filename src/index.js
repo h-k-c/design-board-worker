@@ -964,6 +964,11 @@ ${context || '（无）'}
     "layout": "",
     "palette": [],
     "typography": "",
+    "radius": "",
+    "shadow": "",
+    "spacing": "",
+    "gradients": [],
+    "signature": [],
     "componentRules": [],
     "motionRules": [],
     "avoid": []
@@ -999,7 +1004,16 @@ ${context || '（无）'}
 约束：
 - 页面数量必须在 1-${effectivePageLimit} 个之间。${planScope === 'single' ? '只能输出 1 个页面。' : '超过上限时合并次要页面。'}
 - appName / designIntent 用简洁中文概括产品与设计意图。
-- globalStyle 必须从设计 DNA 与大爆炸具体因子中提炼出可复用的全局规范，并尽量保留主证据里的**具体数值**（色板十六进制、字体族与字号、圆角、阴影、间距、动效缓动）。
+- **globalStyle 是这个 app 唯一的、完整的结构化设计系统**，后续每个页面都只靠它来落地视觉（不会再读原始 DNA 长文），所以你必须把设计 DNA / 大爆炸因子里的**全部可落地数值都搬进来、一个不漏**：
+  - palette：4-6 条，每条形如 "#C8102E 主色/强调" 这样"十六进制 + 中文角色"，覆盖主色/辅助/中性/背景/强调。
+  - typography：字体族 + 各级字号字重，如 "标题 Plus Jakarta 700 22px / 正文 Inter 400 15px/1.6 / 标签 13px 500"。
+  - radius：圆角体系，如 "卡片 16、按钮 12、标签 999"。
+  - shadow：完整 box-shadow 配方，如 "0 8px 24px rgba(0,0,0,.08)"。
+  - spacing：间距阶，如 "4/8/12/16/24/32"。
+  - gradients：签名渐变(如有)，每条写完整 CSS。
+  - signature：3-6 条**最有辨识度的细节处理**(毛玻璃、特定卡片质感、强调色用法、图标风格等)，确保高级感不丢。
+  - componentRules：卡片/按钮/标签/列表的具体处理规则。
+  这一步等于"先建设计系统"，宁可写满也不要含糊——精度全靠它锁住。
 - **globalNav 是整个 app 唯一的一份共享导航，定一次、全页通用**：type 取 bottom-tab / top-nav / sidebar / none；items 是 2-5 个导航项，每项含 key（英文标识）、label（简体中文）、icon（英文图标名，如 home/list/search/user）。所有页面都必须复用**完全相同**的这套 items，绝不允许某些页面多一项少一项或改名。
 - 每个 page 用 navKey 标注它对应 globalNav 里哪一项被激活（navKey 必须等于某个 globalNav.items[].key）；不需要导航的页面（如登录/详情）navKey 留空、type 仍按全局。
 - 图像提示词、图片描述、单图 AI 分析只能帮助理解产品语义和氛围，不得作为主要视觉规范。
@@ -1184,13 +1198,14 @@ ${pageStr}
 - ${pf.rules}
 - 固定视口 ${viewport.width}x${viewport.height}；移动端根内容 width:100%，不要写更小 max-width 居中壳。
 
-## 视觉证据优先级（最重要）
-- ${evidencePriority}
+## 视觉依据（最重要）
+- **globalStyle 是这个 app 完整的结构化设计系统（已从设计 DNA 蒸馏好），是你落地视觉的唯一主依据**：必须严格复用它的 palette / typography / radius / shadow / spacing / gradients / signature 里的**具体值**，一个都不要改。
+- 下方 context 只是少量补充语义/内容方向，**不承载完整视觉**，不要指望它给设计；视觉一切以 globalStyle 为准。
 - ${referenceRule}
-- 设计 DNA / 大爆炸具体因子是**最高优先级视觉规范**：必须复用其中的具体色值(#RRGGBB)、字体、圆角、阴影、间距、渐变、质感；缺口才补齐。
 
 ## 设计系统纪律（决定高级感，严格遵守）
-- **令牌化**：page-base 区块的 CSS 里定义全部 :root token（colors/spacing/radius/shadow/font），后续区块只引用 token。
+- **令牌化**：page-base 区块的 CSS 里把 globalStyle 的值落成 :root token（colors/spacing/radius/shadow/font/gradients），后续区块只引用 token。
+- **signature 细节必须体现**：globalStyle.signature 里那几条辨识度细节要真正落到对应组件上，别只做通用卡片。
 - **8pt 间距体系**(4/8/12/16/24/32/48)，同组间距一致，区块之间留白慷慨。
 - **字阶分明**：≥4 级字号 + 字重对比，正文行高 1.5–1.7；一屏 ≥3 层信息层级。
 - **克制配色**：DNA 主色 + 中性灰阶，强调色只给关键 CTA/选中态，对比度达 AA。
