@@ -1524,7 +1524,7 @@ ${styleStr}
   try {
     let result = ''
 
-    async function callOpenAICompat(apiUrl, apiKey, modelName, onDelta) {
+    async function callOpenAICompat(apiUrl, apiKey, modelName, onDelta, opts = {}) {
       if (!apiKey) {
         const err = new Error('缺少接口密钥，请在设置中填写。')
         err.status = 400
@@ -1611,6 +1611,10 @@ ${styleStr}
         err.status = res.status
         throw err
       }
+      // Raw passthrough: hand the upstream SSE stream straight back to the caller
+      // without parsing it. The worker then does ~zero per-token CPU work, which
+      // is what prevents "Worker exceeded CPU time limit" on large page streams.
+      if (opts.rawStream) return res
       // Parse SSE stream and collect content chunks
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
@@ -1674,23 +1678,22 @@ ${styleStr}
     if (provider !== 'ollama' && streamToClient) {
       const ep = resolveEndpoint()
       if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
-      const { readable, writable } = new TransformStream()
-      const writer = writable.getWriter()
-      const enc = new TextEncoder()
-      ;(async () => {
-        try {
-          await callOpenAICompat(ep.apiUrl, ep.key, ep.model, (delta) => {
-            writer.write(enc.encode(delta)).catch(() => {})
-          })
-        } catch (e) {
-          await writer.write(enc.encode('__DB_AI_ERROR__:' + (e.message || 'AI 请求失败'))).catch(() => {})
-        } finally {
-          await writer.close().catch(() => {})
-        }
-      })()
-      return new Response(readable, {
+      // Pass-through: pipe the upstream SSE body straight to the browser. The
+      // worker no longer parses every token frame, so it does ~zero per-token CPU
+      // work and never hits the Cloudflare CPU time limit on large page streams.
+      // The frontend (readAiStream) parses the SSE frames instead.
+      let upstream
+      try {
+        upstream = await callOpenAICompat(ep.apiUrl, ep.key, ep.model, null, { rawStream: true })
+      } catch (e) {
+        return json({
+          error: e.message || 'AI 请求失败',
+          meta: { provider, model: resolvedModel, mode, elapsedMs: Date.now() - startedAt, promptChars },
+        }, e.status || 500)
+      }
+      return new Response(upstream.body, {
         headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
+          'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache',
           'X-AI-Prompt-Chars': String(promptChars),
           'X-AI-Image-Count': String(resolvedImages.length),
