@@ -1538,6 +1538,7 @@ ${styleStr}
     zhipu:      { vl: 'glm-4v',                          llm: 'glm-4-plus' },
     mi:         { vl: 'mimo-v2-omni',                    llm: 'mimo-v2-flash' },
     google:     { vl: 'gemini-2.5-flash',                llm: 'gemini-2.5-flash' },
+    groq:       { vl: 'meta-llama/llama-4-scout-17b-16e-instruct', llm: 'llama-3.3-70b-versatile' },
   }
   const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
   const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
@@ -1692,6 +1693,7 @@ ${styleStr}
         case 'modelscope': return { apiUrl: `${(baseUrl || env.MODELSCOPE_BASE_URL || 'https://api-inference.modelscope.cn/v1').replace(/\/$/, '')}/chat/completions`, key: apiKey || env.MODELSCOPE_API_KEY, model: resolvedModel }
         case 'mi': return { apiUrl: `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`, key: apiKey || env.MI_API_KEY, model: resolvedModel }
         case 'google': return { apiUrl: `${compatBase('https://generativelanguage.googleapis.com/v1beta/openai')}/chat/completions`, key: apiKey || env.GOOGLE_API_KEY, model: resolvedModel }
+        case 'groq': return { apiUrl: `${compatBase('https://api.groq.com/openai/v1')}/chat/completions`, key: apiKey || env.GROQ_API_KEY, model: resolvedModel }
         case 'lmstudio': return { apiUrl: `${(baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')}/v1/chat/completions`, key: 'lm-studio', model: model || 'default' }
         default: return null
       }
