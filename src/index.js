@@ -1719,6 +1719,7 @@ ${styleStr}
           meta: { provider, model: resolvedModel, mode, elapsedMs: Date.now() - startedAt, promptChars },
         }, e.status || 500)
       }
+      console.log(`[AI] stream-start mode=${mode} provider=${provider} model=${resolvedModel} promptChars=${promptChars} reasoning=${enableReasoning} connectMs=${Date.now() - startedAt}`)
       return new Response(upstream.body, {
         headers: {
           'Content-Type': 'text/event-stream; charset=utf-8',
