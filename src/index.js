@@ -668,9 +668,11 @@ async function resolveImageUrl(imageUrl, env) {
     }
   }
 
-  // Public R2 URLs are already reachable by model providers. Keep them as URLs
-  // instead of inflating the request body with base64 data.
-  if (keyFromPublicUrl(imageUrl, env)) return imageUrl
+  const publicKey = keyFromPublicUrl(imageUrl, env)
+  if (publicKey && env.ASSETS) {
+    const object = await env.ASSETS.get(publicKey)
+    return await r2ObjectToDataUrl(object) || imageUrl
+  }
 
   const match = imageUrl.match(/\/api\/images\/([^/?#]+)/)
   if (match) {
@@ -935,7 +937,10 @@ prompt 必须是可直接复制为 CSS/JS 代码的实现指令。`
 ${explosionCategoryRule}
 label 必须 2-8 个中文词（色彩类带色号、字体类带参数），适合显示在小气泡里。
 prompt 必须是可直接复制为 CSS/代码的实现指令，包含具体数值。`
-    return { systemPrompt, userPrompt, imageUrls: imageUrl ? [imageUrl] : [] }
+    const imageUrls = imageUrl
+      ? [imageUrl]
+      : images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
+    return { systemPrompt, userPrompt, imageUrls }
   }
 
   function buildPolishPrompt() {
