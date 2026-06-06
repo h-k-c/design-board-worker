@@ -163,6 +163,29 @@ async function saveJsonSetting(env, userId, key, value) {
   ).bind(userId, key, JSON.stringify(value ?? null)).run()
 }
 
+function mergeProviderSettings(existing = {}, incoming = {}) {
+  const current = existing && typeof existing === 'object' ? existing : {}
+  const next = incoming && typeof incoming === 'object' ? incoming : {}
+  const provider = next.provider || current.provider || 'modelscope'
+  const apiKeys = {
+    ...(current.apiKeys && typeof current.apiKeys === 'object' ? current.apiKeys : {}),
+  }
+  const incomingKeys = next.apiKeys && typeof next.apiKeys === 'object' ? next.apiKeys : {}
+  for (const [key, value] of Object.entries(incomingKeys)) {
+    if (typeof value === 'string' ? value.trim() : value) apiKeys[key] = value
+  }
+  const activeKey = typeof next.apiKey === 'string' ? next.apiKey.trim() : next.apiKey
+  if (activeKey) apiKeys[provider] = activeKey
+
+  return {
+    ...current,
+    ...next,
+    provider,
+    apiKeys,
+    apiKey: apiKeys[provider] || current.apiKey || '',
+  }
+}
+
 function collectAssetRefs(value, env, refs = { ids: new Set(), keys: new Set(), urls: new Set() }) {
   if (!value) return refs
   if (Array.isArray(value)) {
@@ -540,7 +563,8 @@ async function handleSaveBoard(req, env, userId) {
       await env.DB.prepare('INSERT INTO board_state (user_id, transform) VALUES (?, ?)')
         .bind(userId, JSON.stringify(transform)).run()
     }
-    await saveJsonSetting(env, userId, 'provider_settings', settings)
+    const existingSettings = await loadJsonSetting(env, userId, 'provider_settings')
+    await saveJsonSetting(env, userId, 'provider_settings', mergeProviderSettings(existingSettings, settings))
     await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
 
     const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
