@@ -693,6 +693,7 @@ async function handleAI(req, env) {
     provider = 'qwen',
     apiKey,
     model,
+    vlModel = '',
     baseUrl,
     lmstudioUrl,
     ollamaUrl,
@@ -1541,7 +1542,12 @@ ${styleStr}
     groq:       { vl: 'meta-llama/llama-4-scout-17b-16e-instruct', llm: 'llama-3.3-70b-versatile' },
   }
   const defaults = MODEL_DEFAULTS[provider] || MODEL_DEFAULTS.modelscope
-  const resolvedModel = model || (needsVision ? defaults.vl : defaults.llm)
+  // Vision tasks (image-based 大爆炸 / group analysis) MUST use a vision-capable
+  // model. Never fall back to the user's text `model` for these — a text model
+  // can't see the images and will hallucinate colors (e.g. blue for red refs).
+  const resolvedModel = needsVision
+    ? (vlModel || defaults.vl)
+    : (model || defaults.llm)
 
   // Resolve Worker image URLs to data URLs so external APIs can fetch them
   const resolvedImages = await Promise.all(
