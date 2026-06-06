@@ -753,9 +753,13 @@ async function handleAI(req, env, userId) {
     blockHtml = '',
     blockCss = '',
   } = body
-  // Reasoning is provider/model-specific. No frontend global toggle: default to
-  // enabled where supported, and strip unsupported params on provider 400s.
-  const enableReasoning = true
+  // Reasoning is provider/model-specific. No frontend global toggle. Enabled by
+  // default where it helps quality (analysis / planning / explosion), but turned
+  // OFF for the code-emitting page steps: thinking there mostly burns tokens and
+  // latency without improving the HTML, so disabling it noticeably speeds up
+  // page generation. (Revisit per-mode if a step's quality regresses.)
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit'])
+  const enableReasoning = !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
