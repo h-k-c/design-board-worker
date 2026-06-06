@@ -1044,10 +1044,10 @@ ${context || '（无）'}
 - ${pf.rules}
 - 固定设计视口 ${viewport.width}x${viewport.height}。移动端根容器 width:100%、min-height:100vh 铺满，禁止更小的 max-width 居中壳导致左右留白；Web 才可用居中容器。
 
-## 视觉证据优先级（最重要）
-- ${evidencePriority}
+## 视觉依据（最重要）
+- **globalStyle 是这个 app 完整的结构化设计系统（已从设计 DNA 蒸馏好），是你落地视觉的唯一主依据**：必须严格复用它的 palette / typography / radius / shadow / spacing / gradients / signature 的**具体值**，一个都不要改，并把它们落进 :root token。
+- 下方 context 只是少量补充语义/内容方向，**不承载完整视觉**；视觉一切以 globalStyle 为准。
 - ${referenceRule}
-- 设计 DNA / 大爆炸具体因子是**最高优先级视觉规范**：必须把其中的具体色值(#RRGGBB)、字体族/字号/字重、圆角、阴影 box-shadow、间距、渐变、毛玻璃、质感直接落到 CSS。globalStyle 是它的结构化摘要，冲突时以 DNA 具体值为准。
 
 ## 设计系统纪律（决定"高级感"，必须严格遵守）
 1. **令牌化**：在 :root 定义全部设计 token（colors / spacing / radius / shadow / font）。所有数值都引用 token，不要散落魔法数。
@@ -1075,11 +1075,13 @@ ${context || '（无）'}
 设计意图（designIntent）：${designIntent || ''}
 目标平台（platform）：${pf.label}
 
-设计 DNA / 大爆炸因子 / 辅助语义证据（DNA 与大爆炸具体因子为最高优先级视觉规范）：
-${context || '（无，按 globalStyle 与 designIntent 合理发挥，仍须完整精致的视觉）'}
-
-全局风格摘要（globalStyle）：
+结构化设计系统（globalStyle，唯一主视觉依据，严格复用其具体值）：
 ${styleStr}
+
+${navRule}
+
+补充语义（context，仅内容方向，不承载视觉）：
+${context || '（无）'}
 
 当前要生成的页面（page）：
 ${pageStr}
@@ -1097,7 +1099,8 @@ ${pageStr}
 约束：
 - pageId 与 page.id 一致；title 用简洁中文。
 - html 不要包含 <html>/<head>/<body> 外壳，只输出 body 内部内容（页面级 wrapper 可有）。
-- 严格复用 DNA / 大爆炸的具体数值；遵守 globalStyle.avoid。
+- 严格复用 globalStyle 的具体数值（颜色/字体/圆角/阴影/间距/渐变/签名细节）；遵守 globalStyle.avoid。
+- 若有 globalNav 约束：导航区块的项必须**逐字复用 globalNav.items**（label/顺序/数量完全一致），只改激活项，不要自由增删改名。
 - 不要使用大面积 #e5e7eb / #f3f4f6 灰块充当图片或内容。
 - 再次强调：除技术标识符和 CSS 值外，所有面向人阅读的文本一律简体中文。`
       const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 6)
