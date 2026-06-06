@@ -690,7 +690,9 @@ async function handleAI(req, env, userId) {
   // model" + bad sync problems — what you saved is what runs.
   const dbSettings = (userId && await loadJsonSetting(env, userId, 'provider_settings')) || {}
   const provider = dbSettings.provider || body.provider || 'qwen'
-  const apiKey = dbSettings.apiKey || body.apiKey
+  // Per-provider token: prefer this provider's own saved key, so a key set for a
+  // different provider (e.g. a Groq gsk_ token) is never sent to ModelScope.
+  const apiKey = (dbSettings.apiKeys && dbSettings.apiKeys[provider]) || dbSettings.apiKey || (body.apiKeys && body.apiKeys[provider]) || body.apiKey
   const model = dbSettings.llmModel || dbSettings.model || body.model
   const vlModel = dbSettings.vlModel || body.vlModel || ''
   const baseUrl = dbSettings.baseUrl || body.baseUrl
