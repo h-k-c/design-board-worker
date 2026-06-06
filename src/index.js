@@ -713,6 +713,8 @@ async function handleAI(req, env) {
     streamPreview = false,
     compositionMode = false,
     directHtml = false,
+    // When false (default), disable model "thinking"/reasoning for speed.
+    enableReasoning = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
@@ -1548,11 +1550,15 @@ ${styleStr}
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
       }
-      // `enable_thinking` is a Qwen/DashScope/ModelScope-only field. DeepSeek,
-      // Zhipu and other OpenAI-compatible endpoints may reject the unknown
-      // param (400) — only send it where supported.
+      // Reasoning/"thinking" control. Default OFF (enableReasoning=false) because
+      // hidden chain-of-thought is the #1 cause of slow time-to-first-token. Each
+      // provider exposes a different knob, and unknown params 400 on some
+      // endpoints, so only send the knob each provider is known to accept.
       if (provider === 'qwen' || provider === 'modelscope') {
-        body.enable_thinking = false
+        body.enable_thinking = !!enableReasoning
+      } else if (provider === 'deepseek') {
+        // DeepSeek's OpenAI-compatible API accepts reasoning_effort; 'none' skips thinking.
+        body.reasoning_effort = enableReasoning ? 'high' : 'none'
       }
       // Many OpenAI-compatible third-party endpoints either reject
       // response_format or handle large JSON worse when it is enabled. Page
@@ -1565,7 +1571,7 @@ ${styleStr}
       if (wantsJson && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
-      if (provider === 'google' && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
+      if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
         body.reasoning_effort = /gemini-2\.5/i.test(String(modelName || '')) ? 'none' : 'minimal'
       }
       const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000 : mode === 'page-plan' ? 150000 : 70000
