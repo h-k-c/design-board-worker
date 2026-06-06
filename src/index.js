@@ -1064,6 +1064,63 @@ ${context || '（无）'}
     return { systemPrompt, userPrompt, imageUrls }
   }
 
+  // Consistency-by-construction: derive a deterministic shared "chrome" (color
+  // tokens + the exact nav markup) from globalStyle/globalNav so every page reuses
+  // identical chrome instead of the model re-inventing it per page. This is what
+  // keeps the whole app visually unified even with a fast/cheap model.
+  function buildSharedChrome(gs, nav, activeNavKey) {
+    const hexes = []
+    try {
+      const s = JSON.stringify(gs || {})
+      const re = /#[0-9a-fA-F]{6}\b/g
+      let m
+      while ((m = re.exec(s)) && hexes.length < 8) {
+        const h = m[0].toUpperCase()
+        if (!hexes.includes(h)) hexes.push(h)
+      }
+    } catch {}
+    const primary = hexes[0] || '#111111'
+    const tokenLines = hexes.map((h, i) => `  --c${i + 1}: ${h};${i === 0 ? ' /* 主色 primary */' : ''}`).join('\n')
+    const tokenCss = hexes.length
+      ? `:root{\n${tokenLines}\n}`
+      : ''
+
+    const items = (nav && Array.isArray(nav.items)) ? nav.items.filter(it => it && it.label) : []
+    const navType = nav?.type || 'none'
+    let navHtml = ''
+    if (items.length && navType !== 'none') {
+      const lis = items.map(it => {
+        const active = it.key && it.key === activeNavKey
+        const cls = active
+          ? `text-[${primary}] font-semibold`
+          : `text-neutral-400`
+        return `    <button data-nav-key="${it.key || ''}" class="flex-1 flex flex-col items-center gap-1 py-2 ${cls}">
+      <span class="text-[18px] leading-none">●</span>
+      <span class="text-[11px] leading-none">${it.label}</span>
+    </button>`
+      }).join('\n')
+      if (navType === 'bottom-tab') {
+        navHtml = `<nav data-block="global-nav" data-block-label="底部导航" class="fixed bottom-0 left-0 right-0 z-30 flex bg-white/95 backdrop-blur border-t border-black/5 px-2">
+${lis}
+  </nav>`
+      } else if (navType === 'top-nav') {
+        navHtml = `<nav data-block="global-nav" data-block-label="顶部导航" class="sticky top-0 z-30 flex bg-white/95 backdrop-blur border-b border-black/5 px-2">
+${lis}
+  </nav>`
+      } else if (navType === 'sidebar') {
+        const sideLis = items.map(it => {
+          const active = it.key && it.key === activeNavKey
+          const cls = active ? `bg-[${primary}]/10 text-[${primary}] font-semibold` : `text-neutral-500`
+          return `      <button data-nav-key="${it.key || ''}" class="w-full text-left px-3 py-2 rounded-lg ${cls}">${it.label}</button>`
+        }).join('\n')
+        navHtml = `<nav data-block="global-nav" data-block-label="侧边导航" class="w-[120px] shrink-0 flex flex-col gap-1 p-2 border-r border-black/5">
+${sideLis}
+  </nav>`
+      }
+    }
+    return { tokenCss, navHtml, navType, primary, hexCount: hexes.length }
+  }
+
   function buildPageGeneratePrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
@@ -1075,6 +1132,15 @@ ${context || '（无）'}
       ? `全局共享导航（globalNav，全 app 唯一）：${navStr}\n当前页 navKey：${page?.navKey || '（无）'}\n如果 globalNav.type 不是 none，本页必须输出一个导航区块，**逐字复用 globalNav.items 的 label/顺序/数量，绝不增删改名**；只把 navKey 对应的那一项设为激活态。type=bottom-tab 放底部、top-nav 放顶部、sidebar 放侧边。`
       : '本页没有全局导航约束，按 page 规划自行决定是否需要导航。'
     if (directHtml) {
+      const chrome = buildSharedChrome(globalStyle, globalNav, page?.navKey)
+      const chromeRule = [
+        chrome.tokenCss
+          ? `## 强制统一令牌（必须原样使用，全 app 共享）\n- 这是全 app 唯一的配色令牌，**css 字段必须以下面这段 :root 原样开头**（一字不改）：\n\`\`\`css\n${chrome.tokenCss}\n\`\`\`\n- 页面里所有颜色一律用这些令牌：主色/CTA/选中态用 \`text-[var(--c1)]\` \`bg-[var(--c1)]\` 等，**严禁自创新色值**。主色是 ${chrome.primary}，必须在本页明显可见（品牌色不能丢）。`
+          : '',
+        chrome.navHtml
+          ? `## 强制共享导航（必须原样粘贴，全 app 逐字一致）\n- 本页必须包含下面这段导航区块 HTML，**原样粘贴，不要增删改导航项的文字/数量/顺序/图标**，只允许保留我已设好的当前页激活态：\n\`\`\`html\n${chrome.navHtml}\n\`\`\`\n- ${chrome.navType === 'bottom-tab' ? '它是固定底部栏，请给页面主内容底部留出 pb-20 的空间避免被遮挡。' : chrome.navType === 'top-nav' ? '它是顶部栏，放在页面最上方。' : '它是侧边栏，与主内容左右并排（外层用 flex）。'}`
+          : '',
+      ].filter(Boolean).join('\n\n')
       const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师，作品达到 Dribbble / Mobbin 精选水准。你将为「${pf.label}」产品的单个页面，直接产出一份自包含、可立即预览、视觉精致的前端代码（HTML + 内联 CSS + 必要 JS）。不要线框图、不要示意稿，要像真实上线产品的第一屏。
 
 ## 用 Tailwind（重要）
@@ -1091,6 +1157,8 @@ ${context || '（无）'}
 - **globalStyle 是这个 app 完整的结构化设计系统（已从设计 DNA 蒸馏好），是你落地视觉的唯一主依据**：必须严格复用它的 palette / typography / radius / shadow / spacing / gradients / signature 的**具体值**，一个都不要改，并把它们落进 :root token。
 - 下方 context 只是少量补充语义/内容方向，**不承载完整视觉**；视觉一切以 globalStyle 为准。
 - ${referenceRule}
+
+${chromeRule || ''}
 
 ## 设计系统纪律（决定"高级感"，必须严格遵守）
 1. **统一令牌**：所有颜色/圆角/阴影/字号都来自 globalStyle 的具体值，用 Tailwind 任意值表达，全页一致，不要随手编新值。
