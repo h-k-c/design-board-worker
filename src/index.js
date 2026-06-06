@@ -758,7 +758,7 @@ async function handleAI(req, env, userId) {
   // OFF for the code-emitting page steps: thinking there mostly burns tokens and
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
-  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit'])
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill'])
   const enableReasoning = !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
@@ -1659,7 +1659,76 @@ ${styleStr}
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
-  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
+  // ---- Component Protocol v1 (see frontend docs/component-protocol.md) ----
+  // Catalog kept compact + in sync with the frontend REGISTRY. The skeleton step
+  // (big model) only picks components + layout + contentHints; the fill step
+  // (small model) only outputs props JSON matching one component's schema.
+  const COMPONENT_CATALOG = {
+    Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient", "accent": "primary" }' },
+    SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str? }' },
+    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool? } ] }（2-8个）' },
+    CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', props: '{ "title": str?, "variant": "icon-tile|plain", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral" } ] }（2-8张）' },
+    ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', props: '{ "title": str?, "variant": "thumb|minimal", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str? } ] }（2-12条）' },
+    SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
+    DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]? }' },
+    KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', props: '{ "title": str?, "rows": [ { "key": str, "value": str } ] }' },
+  }
+  const ICON_NAMES = 'home list category grid search user bell star heart settings globe book file shield clock chart tag bookmark'
+
+  function buildPageSkeletonPrompt() {
+    const styleStr = globalStyle ? JSON.stringify(globalStyle) : '（无）'
+    const catalog = Object.entries(COMPONENT_CATALOG)
+      .map(([name, d]) => `- ${name}：${d.use}${d.layout !== '-' ? `（布局参数 ${d.layout}）` : ''}`).join('\n')
+    const systemPrompt = `你是移动端页面的版面架构师。你只做"版面决策"，绝不写任何 HTML/CSS。给你设计系统与页面意图，你把这一页拆成有序的组件块，并为每块给出内容要点。
+规则：
+- 只能使用下列已注册组件，不许发明新组件：
+${catalog}
+- 你输出的是"选择题"：每块选 component + 必要的布局参数（cols/span/variant），并给 contentHints（2-5 条简短中文内容要点，告诉后续填充该块要放什么内容/几条/什么文案方向）。
+- 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
+- icon 名只能取：${ICON_NAMES}。
+- 一页 4-8 个块，主视觉靠前、次要靠后，符合移动端竖屏浏览节奏。
+- 严格只返回一个 JSON 对象，无任何解释/thought/markdown。`
+    const userPrompt = `产品名：${appName || ''}
+设计意图：${designIntent || ''}
+目标平台：${pf.label}
+设计系统 globalStyle：${styleStr}
+本页：${page ? JSON.stringify(page) : '（首页）'}
+
+只返回如下结构 JSON：
+{
+  "pageId": "${page?.id || 'home'}",
+  "title": "页面中文标题",
+  "layout": { "type": "scroll", "gap": "md" },
+  "blocks": [
+    { "id": "kebab-唯一", "component": "组件名", "order": 1, "span": "full", "cols": 2, "variant": "可选", "contentHints": ["要点1","要点2"] }
+  ]
+}`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  function buildComponentFillPrompt() {
+    const comp = String(body.component || '')
+    const def = COMPONENT_CATALOG[comp]
+    const hints = Array.isArray(body.contentHints) ? body.contentHints.join('；') : (body.contentHints || '')
+    const palette = (globalStyle && Array.isArray(globalStyle.palette)) ? globalStyle.palette.join('、') : ''
+    const systemPrompt = `你为单个 UI 组件产出"渲染数据 props"，是结构化 JSON，不是代码。绝不写 HTML/CSS。
+规则：
+- 严格符合给定 props schema 的字段；多余字段不要，缺的用合理中文内容补齐。
+- 颜色只用枚举名 primary/accent2/neutral，不写十六进制。尺寸/变体只用 schema 列出的枚举。
+- icon 名只能取：${ICON_NAMES}。
+- 所有面向人阅读的文本一律简体中文，且要贴合内容要点、具体真实，禁止“示例/占位/Lorem”。
+- 严格只返回一个 JSON 对象（即 props 本体），无解释/thought/markdown。`
+    const userPrompt = `组件：${comp}
+用途：${def ? def.use : ''}
+props schema：${def ? def.props : '{}'}
+配色板（供你理解 primary 等枚举对应的真实色，但你输出仍用枚举名）：${palette}
+内容要点 contentHints：${hints || '（无，按组件用途合理填充贴题中文内容）'}
+
+只返回符合该 schema 的 props JSON 对象。`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
