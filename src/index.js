@@ -1040,9 +1040,15 @@ ${context || '（无）'}
     if (directHtml) {
       const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师，作品达到 Dribbble / Mobbin 精选水准。你将为「${pf.label}」产品的单个页面，直接产出一份自包含、可立即预览、视觉精致的前端代码（HTML + 内联 CSS + 必要 JS）。不要线框图、不要示意稿，要像真实上线产品的第一屏。
 
+## 用 Tailwind（重要）
+- 预览环境**已加载 Tailwind CSS（Play CDN，含 forms / container-queries 插件）**。请**直接用 Tailwind 工具类写 HTML**，不要手写大段 CSS。
+- 把 globalStyle 的具体值用 Tailwind **任意值语法**落地：\`bg-[#C8102E]\` \`text-[#1a1a1a]\` \`text-[15px]\` \`font-semibold\` \`rounded-[16px]\` \`shadow-[0_8px_24px_rgba(0,0,0,0.08)]\` \`p-4\` \`gap-3\` 等。颜色/圆角/阴影/字号一律用 globalStyle 里的真实值。
+- 间距/字阶/圆角优先用 Tailwind 标准刻度（p-4=16px 等），需要精确值时用任意值。
+- \`css\` 字段**只放 Tailwind 做不到的东西**（如 @keyframes 自定义动画、复杂渐变背景），通常很短或为空字符串。
+
 ## 平台约束
 - ${pf.rules}
-- 固定设计视口 ${viewport.width}x${viewport.height}。移动端根容器 width:100%、min-height:100vh 铺满，禁止更小的 max-width 居中壳导致左右留白；Web 才可用居中容器。
+- 固定设计视口 ${viewport.width}x${viewport.height}。移动端根容器 w-full、min-h-screen 铺满，禁止更小的 max-width 居中壳导致左右留白；Web 才可用居中容器。
 
 ## 视觉依据（最重要）
 - **globalStyle 是这个 app 完整的结构化设计系统（已从设计 DNA 蒸馏好），是你落地视觉的唯一主依据**：必须严格复用它的 palette / typography / radius / shadow / spacing / gradients / signature 的**具体值**，一个都不要改，并把它们落进 :root token。
@@ -1050,8 +1056,8 @@ ${context || '（无）'}
 - ${referenceRule}
 
 ## 设计系统纪律（决定"高级感"，必须严格遵守）
-1. **令牌化**：在 :root 定义全部设计 token（colors / spacing / radius / shadow / font）。所有数值都引用 token，不要散落魔法数。
-2. **间距用 8pt 体系**：4/8/12/16/24/32/48/64。同组元素间距一致，区块之间留白要慷慨、有呼吸感。
+1. **统一令牌**：所有颜色/圆角/阴影/字号都来自 globalStyle 的具体值，用 Tailwind 任意值表达，全页一致，不要随手编新值。
+2. **间距用 8pt 体系**：4/8/12/16/24/32/48/64（对应 p-1/p-2/p-3/p-4/p-6/p-8/p-12/p-16）。同组元素间距一致，区块之间留白要慷慨、有呼吸感。
 3. **字阶有明确层级**：至少 4 级字号 + 字重对比（如 13/15/20/28，weight 400/500/700），正文行高 1.5–1.7，标题更紧。一屏内信息层级 ≥3 层。
 4. **克制配色**：以 DNA 主色 + 中性灰阶为主，强调色只用在关键 CTA / 选中态，不要彩虹色。对比度达到 WCAG AA。
 5. **一个视觉焦点**：首屏有明确主视觉/主操作，其余元素服从它，不要平铺堆砌。
@@ -1063,13 +1069,13 @@ ${context || '（无）'}
 - 必须实现 page.sections / page.components，整页 8–14 个具体内容单元，不同 pageType 要有不同构图（详情页强调阅读区、列表页强调浏览、表单页强调流程、概览页强调数据）。
 - 必须建立可见的 design system：导航/标题区、内容容器、卡片、按钮、标签、列表/图表至少覆盖 5 类。
 
-## 块级可编辑结构（强制，供后续局部编辑）
-- 每个 page.sections 逻辑分区包成 \`<section data-block="<kebab-slug>" data-block-label="<简短中文标签>"> ... </section>\`，slug 页面内唯一、语义化（如 hero / category-nav / article-body），不嵌套块、不漏分区。
-- CSS 中每个块的规则用 \`/* block:<slug> */ ... /* /block:<slug> */\` 注释定界；:root / reset / 共享基础样式放在 CSS 最顶部，不被任何 block 注释包裹。
+## 块级可编辑结构（强制，供后续局部编辑 + 逐块揭示动画）
+- 每个 page.sections 逻辑分区包成 \`<section data-block="<kebab-slug>" data-block-label="<简短中文标签>" class="<tailwind 类>"> ... </section>\`，slug 页面内唯一、语义化（如 hero / category-nav / article-body），不嵌套块、不漏分区。
 
 ## 技术约束
-- 自包含、可直接渲染在沙箱 iframe 内。JS 只为必要交互（标签切换、展开等），写在 js 字段，**不依赖任何外部脚本/CDN/远程字体**（外链脚本会被安全策略剥离）。可用 https 图片 URL、data-uri、内联 SVG、纯 CSS 图形。
-- 语义化 HTML、现代 CSS（flex/grid、变量、clamp）。
+- 自包含、可直接渲染在沙箱 iframe 内。Tailwind 已由预览环境注入，你只写工具类即可。
+- JS 只为必要交互（标签切换、展开等），写在 js 字段，**不要自己引入任何外部脚本/CDN**（除 Tailwind 外的外链脚本会被安全策略剥离）。可用 https 图片 URL、data-uri、内联 SVG。
+- 用语义化 HTML + Tailwind 工具类（flex/grid 用 flex/grid 类）。
 - 严格只返回一个 JSON 对象，不要 Markdown 代码块、不要解释、不要 thinking。`
       const userPrompt = `产品名（appName）：${appName || ''}
 设计意图（designIntent）：${designIntent || ''}
@@ -1090,10 +1096,10 @@ ${pageStr}
 {
   "pageId": "${page?.id || 'home'}",
   "title": "页面中文标题",
-  "html": "完整页面 body 内 HTML，按上面块级结构组织",
-  "css": "完整 CSS：:root tokens 在最顶部，每个块用 /* block:slug */ 定界",
+  "html": "完整页面 body 内 HTML，用 Tailwind 工具类组织，按上面块级结构包 section",
+  "css": "通常为空字符串；只在 Tailwind 做不到时放少量自定义 CSS（如 @keyframes）",
   "js": "必要交互 JS，可为空字符串",
-  "notes": ["2-4 条 DNA 到代码的映射，简短中文"]
+  "notes": ["2-4 条 globalStyle 到 Tailwind 类的映射，简短中文"]
 }
 
 约束：
