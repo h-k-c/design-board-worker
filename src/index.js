@@ -681,8 +681,19 @@ async function resolveImageUrl(imageUrl, env) {
   return imageUrl
 }
 
-async function handleAI(req, env) {
+async function handleAI(req, env, userId) {
   const startedAt = Date.now()
+  const body = await req.json()
+  // Database is the source of truth for AI settings. Read the authenticated
+  // user's saved provider settings from D1 and prefer them over whatever the
+  // (possibly stale) frontend localStorage sent. This fixes the "wrong/old
+  // model" + bad sync problems — what you saved is what runs.
+  const dbSettings = (userId && await loadJsonSetting(env, userId, 'provider_settings')) || {}
+  const provider = dbSettings.provider || body.provider || 'qwen'
+  const apiKey = dbSettings.apiKey || body.apiKey
+  const model = dbSettings.llmModel || dbSettings.model || body.model
+  const vlModel = dbSettings.vlModel || body.vlModel || ''
+  const baseUrl = dbSettings.baseUrl || body.baseUrl
   const {
     mode = 'single',
     imageUrl,
@@ -690,11 +701,6 @@ async function handleAI(req, env) {
     analyses = [],
     notes = [],
     context,
-    provider = 'qwen',
-    apiKey,
-    model,
-    vlModel = '',
-    baseUrl,
     lmstudioUrl,
     ollamaUrl,
     // Reference-driven page generation fields
@@ -721,7 +727,7 @@ async function handleAI(req, env) {
     blockId = '',
     blockHtml = '',
     blockCss = '',
-  } = await req.json()
+  } = body
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
@@ -1860,7 +1866,7 @@ async function handleRequest(req, env) {
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
-    if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env)
+    if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env, userId)
 
     // Generated pages (Phase 2 durable persistence)
     if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env, userId)
