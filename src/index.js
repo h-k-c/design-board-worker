@@ -1085,6 +1085,25 @@ ${context || '（无）'}
       ? `:root{\n${tokenLines}\n}`
       : ''
 
+    // Inline line-icons keyed by common icon names (Tailwind CDN has no icon font).
+    const ICONS = {
+      home: '<path d="M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10"/>',
+      list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+      category: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
+      grid: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>',
+      search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+      user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+      profile: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+      mine: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/>',
+      bell: '<path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 01-3.4 0"/>',
+      star: '<path d="M12 3l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18l-5.8 3 1.1-6.5L2.6 9.8l6.5-.9z"/>',
+      heart: '<path d="M12 21s-7-4.5-9.5-9A5 5 0 0112 5a5 5 0 019.5 7c-2.5 4.5-9.5 9-9.5 9z"/>',
+      settings: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 00-.1-1l2-1.5-2-3.4-2.3 1a7 7 0 00-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 00-1.7 1l-2.3-1-2 3.4 2 1.5a7 7 0 000 2l-2 1.5 2 3.4 2.3-1a7 7 0 001.7 1l.3 2.5h4l.3-2.5a7 7 0 001.7-1l2.3 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z"/>',
+    }
+    const iconSvg = (name) => {
+      const inner = ICONS[(name || '').toLowerCase()] || '<circle cx="12" cy="12" r="9"/>'
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="w-[22px] h-[22px]">${inner}</svg>`
+    }
     const items = (nav && Array.isArray(nav.items)) ? nav.items.filter(it => it && it.label) : []
     const navType = nav?.type || 'none'
     let navHtml = ''
@@ -1095,7 +1114,7 @@ ${context || '（无）'}
           ? `text-[${primary}] font-semibold`
           : `text-neutral-400`
         return `    <button data-nav-key="${it.key || ''}" class="flex-1 flex flex-col items-center gap-1 py-2 ${cls}">
-      <span class="text-[18px] leading-none">●</span>
+      ${iconSvg(it.icon)}
       <span class="text-[11px] leading-none">${it.label}</span>
     </button>`
       }).join('\n')
