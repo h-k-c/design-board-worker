@@ -684,18 +684,17 @@ async function resolveImageUrl(imageUrl, env) {
 async function handleAI(req, env, userId) {
   const startedAt = Date.now()
   const body = await req.json()
-  // Database is the source of truth for AI settings. Read the authenticated
-  // user's saved provider settings from D1 and prefer them over whatever the
-  // (possibly stale) frontend localStorage sent. This fixes the "wrong/old
-  // model" + bad sync problems — what you saved is what runs.
+  // D1 is the source of truth for AI settings. The frontend may have stale
+  // localStorage/request-body values, so model calls read the authenticated
+  // user's saved provider_settings directly from the database.
   const dbSettings = (userId && await loadJsonSetting(env, userId, 'provider_settings')) || {}
-  const provider = dbSettings.provider || body.provider || 'qwen'
-  // Per-provider token: prefer this provider's own saved key, so a key set for a
+  const provider = dbSettings.provider || 'qwen'
+  // Per-provider token: use this provider's own saved key, so a key set for a
   // different provider (e.g. a Groq gsk_ token) is never sent to ModelScope.
-  const apiKey = (dbSettings.apiKeys && dbSettings.apiKeys[provider]) || dbSettings.apiKey || (body.apiKeys && body.apiKeys[provider]) || body.apiKey
-  const model = dbSettings.llmModel || dbSettings.model || body.model
-  const vlModel = dbSettings.vlModel || body.vlModel || ''
-  const baseUrl = dbSettings.baseUrl || body.baseUrl
+  const apiKey = (dbSettings.apiKeys && dbSettings.apiKeys[provider]) || dbSettings.apiKey || ''
+  const model = dbSettings.llmModel || dbSettings.model || ''
+  const vlModel = dbSettings.vlModel || ''
+  const baseUrl = dbSettings.baseUrl || ''
   const {
     mode = 'single',
     imageUrl,
@@ -723,13 +722,14 @@ async function handleAI(req, env, userId) {
     streamPreview = false,
     compositionMode = false,
     directHtml = false,
-    // When false (default), disable model "thinking"/reasoning for speed.
-    enableReasoning = false,
     // Block-level targeted edit fields (mode: page-block-edit)
     blockId = '',
     blockHtml = '',
     blockCss = '',
   } = body
+  // Reasoning is provider/model-specific. No frontend global toggle: default to
+  // enabled where supported, and strip unsupported params on provider 400s.
+  const enableReasoning = true
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
@@ -1600,10 +1600,9 @@ ${styleStr}
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
       }
-      // Reasoning/"thinking" control. Default OFF (enableReasoning=false) because
-      // hidden chain-of-thought is the #1 cause of slow time-to-first-token. Each
-      // provider exposes a different knob, and unknown params 400 on some
-      // endpoints, so only send the knob each provider is known to accept.
+      // Reasoning/"thinking" control. There is no global frontend switch because
+      // each provider exposes a different knob, and unknown params 400 on some
+      // endpoints. Enable it where supported and strip unsupported params below.
       if (provider === 'qwen' || provider === 'modelscope') {
         body.enable_thinking = !!enableReasoning
       } else if (provider === 'deepseek') {
