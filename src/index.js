@@ -177,12 +177,19 @@ function mergeProviderSettings(existing = {}, incoming = {}) {
   const activeKey = typeof next.apiKey === 'string' ? next.apiKey.trim() : next.apiKey
   if (activeKey) apiKeys[provider] = activeKey
 
+  // Dedicated fill-model role (self-contained url+key+model). Take incoming when
+  // provided, else keep existing — never let an absent field wipe it.
+  const fillModel = (next.fillModel && typeof next.fillModel === 'object')
+    ? next.fillModel
+    : (current.fillModel && typeof current.fillModel === 'object' ? current.fillModel : undefined)
+
   return {
     ...current,
     ...next,
     provider,
     apiKeys,
     apiKey: apiKeys[provider] || current.apiKey || '',
+    ...(fillModel ? { fillModel } : {}),
   }
 }
 
@@ -1748,9 +1755,17 @@ props schema：${def ? def.props : '{}'}
   // Vision tasks (image-based 大爆炸 / group analysis) MUST use a vision-capable
   // model. Never fall back to the user's text `model` for these — a text model
   // can't see the images and will hallucinate colors (e.g. blue for red refs).
-  const resolvedModel = needsVision
-    ? (vlModel || defaults.vl)
-    : (model || defaults.llm)
+  // Dedicated "fill model" role: component-fill runs MANY small parallel calls,
+  // so it can point at a fully independent endpoint (own url+key+model, e.g. a
+  // separate account/platform) to get its own concurrency quota, away from the
+  // big model's rate limit. Self-contained; resolved straight from DB settings.
+  const fillCfg = (dbSettings.fillModel && typeof dbSettings.fillModel === 'object') ? dbSettings.fillModel : null
+  const useFill = mode === 'component-fill' && fillCfg && fillCfg.baseUrl && fillCfg.apiKey && fillCfg.model
+  const resolvedModel = useFill
+    ? fillCfg.model
+    : needsVision
+      ? (vlModel || defaults.vl)
+      : (model || defaults.llm)
 
   // Resolve Worker image URLs to data URLs so external APIs can fetch them
   const resolvedImages = await Promise.all(
@@ -1894,6 +1909,11 @@ props schema：${def ? def.props : '{}'}
 
     // Resolve the OpenAI-compatible endpoint + key for the chosen provider.
     function resolveEndpoint() {
+      // component-fill with a dedicated fill model: use its self-contained
+      // url+key+model directly (any OpenAI-compatible endpoint).
+      if (useFill) {
+        return { apiUrl: `${String(fillCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: fillCfg.apiKey, model: fillCfg.model }
+      }
       switch (provider) {
         case 'qwen': return { apiUrl: `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`, key: apiKey || env.QWEN_API_KEY, model: resolvedModel }
         case 'deepseek': return { apiUrl: `${compatBase('https://api.deepseek.com/v1')}/chat/completions`, key: apiKey || env.DEEPSEEK_API_KEY, model: resolvedModel }
