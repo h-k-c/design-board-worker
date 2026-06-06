@@ -758,7 +758,7 @@ async function handleAI(req, env, userId) {
   // OFF for the code-emitting page steps: thinking there mostly burns tokens and
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
-  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill'])
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton'])
   const enableReasoning = !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
