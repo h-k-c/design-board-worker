@@ -705,6 +705,7 @@ async function handleAI(req, env) {
     appName = '',
     designIntent = '',
     globalStyle = null,
+    globalNav = null,
     uiContract = null,
     page = null,
     current = null,
@@ -967,6 +968,10 @@ ${context || '（无）'}
     "motionRules": [],
     "avoid": []
   },
+  "globalNav": {
+    "type": "bottom-tab",
+    "items": [ { "key": "home", "label": "首页", "icon": "home" } ]
+  },
   "pages": [
     {
       "id": "home",
@@ -995,7 +1000,8 @@ ${context || '（无）'}
 - 页面数量必须在 1-${effectivePageLimit} 个之间。${planScope === 'single' ? '只能输出 1 个页面。' : '超过上限时合并次要页面。'}
 - appName / designIntent 用简洁中文概括产品与设计意图。
 - globalStyle 必须从设计 DNA 与大爆炸具体因子中提炼出可复用的全局规范，并尽量保留主证据里的**具体数值**（色板十六进制、字体族与字号、圆角、阴影、间距、动效缓动）。
-- 每个页面都会被独立生成为一份自包含界面：如果产品需要全局导航（顶部/底部/侧边），就在相应页面的 sections / components 里写明，并用 navKey 标注当前页的激活项，保证各页导航文案一致。
+- **globalNav 是整个 app 唯一的一份共享导航，定一次、全页通用**：type 取 bottom-tab / top-nav / sidebar / none；items 是 2-5 个导航项，每项含 key（英文标识）、label（简体中文）、icon（英文图标名，如 home/list/search/user）。所有页面都必须复用**完全相同**的这套 items，绝不允许某些页面多一项少一项或改名。
+- 每个 page 用 navKey 标注它对应 globalNav 里哪一项被激活（navKey 必须等于某个 globalNav.items[].key）；不需要导航的页面（如登录/详情）navKey 留空、type 仍按全局。
 - 图像提示词、图片描述、单图 AI 分析只能帮助理解产品语义和氛围，不得作为主要视觉规范。
 - globalStyle.layout 要体现 ${pf.label} 的形态约束。
 - 每个 page 的 sections / components / states 用具体的**简体中文**短语数组（例如「顶部横幅」「错题卡片列表」「批量管理」），不要用英文短语。
@@ -1010,6 +1016,12 @@ ${context || '（无）'}
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，按 designIntent 自行合理推断）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+    const navStr = globalNav && Array.isArray(globalNav.items) && globalNav.items.length
+      ? JSON.stringify(globalNav)
+      : ''
+    const navRule = navStr
+      ? `全局共享导航（globalNav，全 app 唯一）：${navStr}\n当前页 navKey：${page?.navKey || '（无）'}\n如果 globalNav.type 不是 none，本页必须输出一个导航区块，**逐字复用 globalNav.items 的 label/顺序/数量，绝不增删改名**；只把 navKey 对应的那一项设为激活态。type=bottom-tab 放底部、top-nav 放顶部、sidebar 放侧边。`
+      : '本页没有全局导航约束，按 page 规划自行决定是否需要导航。'
     if (directHtml) {
       const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师，作品达到 Dribbble / Mobbin 精选水准。你将为「${pf.label}」产品的单个页面，直接产出一份自包含、可立即预览、视觉精致的前端代码（HTML + 内联 CSS + 必要 JS）。不要线框图、不要示意稿，要像真实上线产品的第一屏。
 
@@ -1199,8 +1211,7 @@ ${context || '（无）'}
 globalStyle:
 ${styleStr}
 
-uiContract:
-${contractStr}
+${navRule}
 
 page:
 ${pageStr}
@@ -1219,7 +1230,7 @@ ${pageStr}
 区块要求：
 - 必须覆盖 page.sections / page.components / page.states，整体至少 8-14 个具体中文内容单元。
 - 每个内容 block 必须带 rect，坐标使用固定视口像素，x/y/w/h 都是数字；rect 要与该区块在页面中的真实位置和尺寸大致一致，不能互相重叠，不能超出 ${viewport.width}x${viewport.height}。
-- 如果需要底部导航/顶部导航，作为独立区块输出，order 靠前或靠后；同一项目的导航文案必须来自 uiContract/sharedComponents/page.navKey，不要自由改名。
+- 如果有 globalNav 约束，导航区块的项必须**逐字复用 globalNav.items**（label/顺序/数量完全一致），只改激活项；不要自由增删改名。导航作为独立区块输出（底部 order 靠后、顶部 order 靠前）。
 - 不要使用会裂开的远程图片；没有可靠图片时用 CSS 渐变、内联 SVG、主题纹理或色块插画。
 - 每个 block 必须完整闭合，不能输出半个标签后等待下一行补齐。`
       const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 4)
