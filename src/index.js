@@ -1773,7 +1773,10 @@ props schema：${def ? def.props : '{}'}
   // separate account/platform) to get its own concurrency quota, away from the
   // big model's rate limit. Self-contained; resolved straight from DB settings.
   const fillCfg = (dbSettings.fillModel && typeof dbSettings.fillModel === 'object') ? dbSettings.fillModel : null
-  const useFill = mode === 'component-fill' && fillCfg && fillCfg.baseUrl && fillCfg.apiKey && fillCfg.model
+  // A fill endpoint only needs url + model — local endpoints (LM Studio) have NO
+  // API key, so don't require one (else component-fill silently falls back to the
+  // big model and hammers it).
+  const useFill = mode === 'component-fill' && fillCfg && fillCfg.baseUrl && fillCfg.model
   const resolvedModel = useFill
     ? fillCfg.model
     : needsVision
@@ -1930,7 +1933,7 @@ props schema：${def ? def.props : '{}'}
       // component-fill with a dedicated fill model: use its self-contained
       // url+key+model directly (any OpenAI-compatible endpoint).
       if (useFill) {
-        return { apiUrl: `${String(fillCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: fillCfg.apiKey, model: fillCfg.model }
+        return { apiUrl: `${String(fillCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: fillCfg.apiKey || 'lm-studio', model: fillCfg.model }
       }
       switch (provider) {
         case 'qwen': return { apiUrl: `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`, key: apiKey || env.QWEN_API_KEY, model: resolvedModel }
