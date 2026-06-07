@@ -1964,7 +1964,7 @@ props schema：${def ? def.props : '{}'}
         case 'mi': return { apiUrl: `${compatBase('https://api.mimo-v2.com/v1')}/chat/completions`, key: apiKey || env.MI_API_KEY, model: resolvedModel }
         case 'google': return { apiUrl: `${compatBase('https://generativelanguage.googleapis.com/v1beta/openai')}/chat/completions`, key: apiKey || env.GOOGLE_API_KEY, model: resolvedModel }
         case 'groq': return { apiUrl: `${compatBase('https://api.groq.com/openai/v1')}/chat/completions`, key: apiKey || env.GROQ_API_KEY, model: resolvedModel }
-        case 'lmstudio': return { apiUrl: `${(baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')}/v1/chat/completions`, key: 'lm-studio', model: model || 'default' }
+        case 'lmstudio': return { apiUrl: `${(baseUrl || lmstudioUrl || 'http://localhost:1234').replace(/\/$/, '')}/v1/chat/completions`, key: 'lm-studio', model: resolvedModel || model || 'default' }
         default: return null
       }
     }
