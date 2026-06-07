@@ -1837,7 +1837,12 @@ props schema：${def ? def.props : '{}'}
       if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
         body.reasoning_effort = /gemini-2\.5/i.test(String(modelName || '')) ? 'none' : 'minimal'
       }
-      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000 : mode === 'page-plan' ? 150000 : 70000
+      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000
+        // Big-model layout planning (skeleton) is as heavy as page-plan → give it
+        // the same headroom; component-fill is small but a local model can be slow.
+        : (mode === 'page-plan' || mode === 'page-skeleton') ? 150000
+        : mode === 'component-fill' ? 120000
+        : 70000
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
       let res
