@@ -782,7 +782,7 @@ async function handleAI(req, env, userId) {
   // OFF for the code-emitting page steps: thinking there mostly burns tokens and
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
-  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton'])
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle'])
   const enableReasoning = !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
@@ -1792,7 +1792,45 @@ props schema：${def ? def.props : '{}'}
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
-  const prompt = mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
+  // Re-skin: adjust the design tokens per a style instruction (content unchanged).
+  function buildPageRestylePrompt() {
+    const gs = globalStyle ? JSON.stringify(globalStyle, null, 2) : '{}'
+    const systemPrompt = `你是 UI 设计系统的 token 调优器。给定当前设计 token 和一句"样式调整指令"，你只微调**视觉 token**，输出调整后的 JSON。
+规则：
+- 绝不改内容、不写 HTML/CSS；只动视觉 token。
+- 只调与指令相关的字段，其余尽量保留原值。
+- 除非指令明确要求换色，**保持品牌主色的色相不变**（可调饱和度/明度）。
+- 严格只返回一个 JSON 对象，结构如下（字段都要给）：
+{
+  "palette": ["#RRGGBB 角色", ...],   // 4-6 条，十六进制+中文角色；保持主色相
+  "radius": "卡片 16、按钮 12、标签 999",
+  "feel": {
+    "spacing": 16, "fontBase": 14,
+    "cardStyle": "shadow|outline|flat|glass",
+    "shadowLevel": "flat|soft|elevated",
+    "border": "none|hairline",
+    "iconStyle": "tint|solid|plain",
+    "gradientHeader": true, "accentBar": false, "glass": false
+  }
+}
+调优指南：
+- "更高级"：增大留白(spacing↑)、精致克制的阴影(shadowLevel:soft/elevated 二选其一更精致)、发丝边框(border:hairline)、降低饱和度、cardStyle 倾向 outline 或 soft-shadow、去掉花哨渐变(gradientHeader:false 视情况)、提升层级对比。
+- "更克制"：去渐变(gradientHeader:false)、去强调条(accentBar:false)、降阴影(shadowLevel:flat/soft)、cardStyle:flat/outline、palette 降饱和。
+- "增强层级"：拉开字号/字重对比(fontBase 可微调)、可加 accentBar:true 强调标题。
+- "减少饱和度"：把 palette 各色相饱和度明显降低，保持色相与可读性。
+- "强化参考 DNA"：更忠实复用原 token，不要发明新风格。`
+    const userPrompt = `产品名：${appName || ''}
+设计意图：${designIntent || ''}
+当前设计 token（globalStyle）：
+${gs}
+
+样式调整指令："${instruction || ''}"
+
+请输出调整后的 token JSON（只含 palette / radius / feel 三个键）。`
+    return { systemPrompt, userPrompt, imageUrls: [] }
+  }
+
+  const prompt = mode === 'page-restyle' ? buildPageRestylePrompt() : mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : mode === 'page-plan' ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
