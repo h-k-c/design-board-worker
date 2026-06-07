@@ -1775,15 +1775,20 @@ ${catalog}
 - 数字、价格、日期、评分、标签等要符合该领域常识与量级，不要写明显假的占位数字。
 - 所有面向人阅读的文本一律简体中文，且要贴合内容要点、具体真实，禁止“示例/占位/Lorem”。
 - 严格只返回一个 JSON 对象（即 props 本体），无解释/thought/markdown。`
+    const curProps = body.currentProps && typeof body.currentProps === 'object' ? JSON.stringify(body.currentProps) : ''
+    const editLine = body.instruction
+      ? `\n\n【这是一次定向编辑】当前该组件的 props 如下：\n${curProps || '（无）'}\n用户修改要求："${body.instruction}"\n只按要求改动相关字段，其余字段尽量保留原值；输出完整的新 props JSON。`
+      : ''
     const userPrompt = `产品名：${appName || '（未给出，从下方设计意图与内容要点推断领域）'}
 产品设计意图：${designIntent || '（无）'}
+所属页面：${body.pageTitle || '（未给出）'}
 组件：${comp}
 用途：${def ? def.use : ''}
 props schema：${def ? def.props : '{}'}
 配色板（供你理解 primary 等枚举对应的真实色，但你输出仍用枚举名）：${palette}
-内容要点 contentHints：${hints || '（无：请严格按产品名+设计意图所属领域 + 本组件用途，填充该领域真实具体的中文内容，绝不要用占位/示例/无关话题）'}
+内容要点 contentHints：${hints || '（无：请严格按产品名+设计意图所属领域 + 本组件用途，填充该领域真实具体的中文内容，绝不要用占位/示例/无关话题）'}${editLine}
 
-请确保每条文案都能直接放进这个真实产品里，读起来像该领域的真实数据。只返回符合该 schema 的 props JSON 对象。`
+请确保每条文案都能直接放进这个真实产品里、并紧扣"产品名+设计意图+所属页面"的主题，读起来像该领域的真实数据。只返回符合该 schema 的 props JSON 对象。`
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
