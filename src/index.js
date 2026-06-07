@@ -1849,7 +1849,10 @@ props schema：${def ? def.props : '{}'}
       // to otherwise wrap output in prose / markdown / thinking — which makes
       // the page-plan/generate result unparseable. Force JSON mode for Gemini
       // on every JSON task.
-      if (wantsJson && (provider === 'google' || !needsStableJson)) {
+      // Local OpenAI-compatible servers (LM Studio / Ollama) often reject
+      // response_format (esp. for VL models) → 400. Never send it to them.
+      const localEndpoint = provider === 'lmstudio' || provider === 'ollama'
+      if (wantsJson && !localEndpoint && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
       if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
@@ -1873,10 +1876,13 @@ props schema：${def ? def.props : '{}'}
           signal: controller.signal,
         })
         res = await makeRequest()
-        if (!res.ok && body.reasoning_effort) {
+        // Strip params the endpoint rejects, then retry once. Covers local
+        // servers (LM Studio) that 400 on response_format / reasoning_effort.
+        if (!res.ok && (body.reasoning_effort || body.response_format)) {
           const clone = await res.clone().text().catch(() => '')
-          if (/reasoning_effort|unsupported|unknown|unrecognized|extra/i.test(clone)) {
+          if (/reasoning_effort|response_format|unsupported|unknown|unrecognized|extra|invalid|not support/i.test(clone)) {
             delete body.reasoning_effort
+            delete body.response_format
             res = await makeRequest()
           }
         }
