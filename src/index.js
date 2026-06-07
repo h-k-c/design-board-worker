@@ -182,6 +182,9 @@ function mergeProviderSettings(existing = {}, incoming = {}) {
   const fillModel = (next.fillModel && typeof next.fillModel === 'object')
     ? next.fillModel
     : (current.fillModel && typeof current.fillModel === 'object' ? current.fillModel : undefined)
+  const visionModel = (next.visionModel && typeof next.visionModel === 'object')
+    ? next.visionModel
+    : (current.visionModel && typeof current.visionModel === 'object' ? current.visionModel : undefined)
 
   // Guard against an un-hydrated client wiping configured lists/models: an EMPTY
   // incoming object/string must NOT overwrite an existing non-empty DB value.
@@ -203,6 +206,7 @@ function mergeProviderSettings(existing = {}, incoming = {}) {
     vlModel: keepStr('vlModel'),
     model: keepStr('model'),
     ...(fillModel ? { fillModel } : {}),
+    ...(visionModel ? { visionModel } : {}),
   }
 }
 
@@ -1792,11 +1796,18 @@ props schema：${def ? def.props : '{}'}
   // API key, so don't require one (else component-fill silently falls back to the
   // big model and hammers it).
   const useFill = mode === 'component-fill' && fillCfg && fillCfg.baseUrl && fillCfg.model
-  const resolvedModel = useFill
-    ? fillCfg.model
-    : needsVision
-      ? (vlModel || defaults.vl)
-      : (model || defaults.llm)
+  // Dedicated, FULLY SEPARATE vision role: vision tasks (大爆炸/图片分析) point at
+  // their own self-contained endpoint (url+key+model), independent of the text
+  // LLM. So setting the LLM to a local text model never drags vision onto it.
+  const visionCfg = (dbSettings.visionModel && typeof dbSettings.visionModel === 'object') ? dbSettings.visionModel : null
+  const useVision = needsVision && visionCfg && visionCfg.baseUrl && visionCfg.model
+  const resolvedModel = useVision
+    ? visionCfg.model
+    : useFill
+      ? fillCfg.model
+      : needsVision
+        ? (vlModel || defaults.vl)
+        : (model || defaults.llm)
 
   // Resolve Worker image URLs to data URLs so external APIs can fetch them
   const resolvedImages = await Promise.all(
@@ -1851,7 +1862,7 @@ props schema：${def ? def.props : '{}'}
       // on every JSON task.
       // Local OpenAI-compatible servers (LM Studio / Ollama) often reject
       // response_format (esp. for VL models) → 400. Never send it to them.
-      const localEndpoint = provider === 'lmstudio' || provider === 'ollama'
+      const localEndpoint = provider === 'lmstudio' || provider === 'ollama' || useVision || useFill
       if (wantsJson && !localEndpoint && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
@@ -1951,8 +1962,10 @@ props schema：${def ? def.props : '{}'}
 
     // Resolve the OpenAI-compatible endpoint + key for the chosen provider.
     function resolveEndpoint() {
-      // component-fill with a dedicated fill model: use its self-contained
-      // url+key+model directly (any OpenAI-compatible endpoint).
+      // Self-contained role endpoints (independent of the LLM provider):
+      if (useVision) {
+        return { apiUrl: `${String(visionCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: visionCfg.apiKey || 'lm-studio', model: visionCfg.model }
+      }
       if (useFill) {
         return { apiUrl: `${String(fillCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: fillCfg.apiKey || 'lm-studio', model: fillCfg.model }
       }
