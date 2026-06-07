@@ -1823,12 +1823,18 @@ props schema：${def ? def.props : '{}'}
         err.status = 400
         throw err
       }
+      // Local endpoints (LM Studio / Ollama) run models like qwen3 that "think"
+      // by default — on long JSON tasks the reasoning eats the token budget and
+      // the JSON gets truncated → unparseable. qwen3 honors a `/no_think` hint;
+      // it's harmless to other models. Inject it for local/role endpoints.
+      const noThink = (provider === 'lmstudio' || provider === 'ollama' || useFill || useVision) ? ' /no_think' : ''
+      const baseText = `${prompt.systemPrompt}\n\n${prompt.userPrompt}${noThink}`
       const content = needsVision
         ? [
-            { type: 'text', text: `${prompt.systemPrompt}\n\n${prompt.userPrompt}` },
+            { type: 'text', text: baseText },
             ...resolvedImages.map(url => ({ type: 'image_url', image_url: { url } })),
           ]
-        : `${prompt.systemPrompt}\n\n${prompt.userPrompt}`
+        : baseText
       // Explosion + page modes return JSON — force JSON output format
       const wantsJson = !streamPreview && ['text-explosion', 'video-explosion', 'design-explosion', 'page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)
       const needsStableJson = !streamPreview && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
