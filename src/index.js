@@ -183,12 +183,25 @@ function mergeProviderSettings(existing = {}, incoming = {}) {
     ? next.fillModel
     : (current.fillModel && typeof current.fillModel === 'object' ? current.fillModel : undefined)
 
+  // Guard against an un-hydrated client wiping configured lists/models: an EMPTY
+  // incoming object/string must NOT overwrite an existing non-empty DB value.
+  // (This caused the user's model dropdown to vanish when settings were saved
+  // before they had been hydrated from the server.)
+  const hasKeys = (o) => o && typeof o === 'object' && Object.keys(o).length > 0
+  const keepObj = (key) => hasKeys(next[key]) ? next[key] : (current[key] ?? next[key])
+  const keepStr = (key) => (typeof next[key] === 'string' && next[key].trim()) ? next[key] : (current[key] ?? next[key])
+
   return {
     ...current,
     ...next,
     provider,
     apiKeys,
     apiKey: apiKeys[provider] || current.apiKey || '',
+    modelOptions: keepObj('modelOptions'),
+    baseUrlOptions: keepObj('baseUrlOptions'),
+    llmModel: keepStr('llmModel'),
+    vlModel: keepStr('vlModel'),
+    model: keepStr('model'),
     ...(fillModel ? { fillModel } : {}),
   }
 }
