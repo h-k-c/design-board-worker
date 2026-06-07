@@ -1720,6 +1720,10 @@ ${styleStr}
     SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
     DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]? }' },
     KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', props: '{ "title": str?, "rows": [ { "key": str, "value": str } ] }' },
+    StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', props: '{ "title": str?, "items": [ { "value": str, "unit": str?, "label": str } ] }（2-6个）' },
+    MediaCard:     { use: '特性大图卡（顶部彩色图区+标题描述，用于专题/功能推荐）', layout: 'span:full', props: '{ "title": str?, "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral" } ] }（2-4张）' },
+    Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', props: '{ "title": str?, "items": [ { "time": str?, "title": str, "desc": str? } ] }（2-8条）' },
+    NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
   }
   const ICON_NAMES = 'home list category grid search user bell star heart settings globe book file shield clock chart tag bookmark'
 
