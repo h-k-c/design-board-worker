@@ -1033,7 +1033,15 @@ ${context || '（无）'}
     "signature": [],
     "componentRules": [],
     "motionRules": [],
-    "avoid": []
+    "avoid": [],
+    "feel": {
+      "spacing": 16,
+      "fontBase": 14,
+      "cardStyle": "shadow",
+      "gradientHeader": true,
+      "accentBar": false,
+      "glass": false
+    }
   },
   "globalNav": {
     "type": "bottom-tab",
@@ -1075,6 +1083,13 @@ ${context || '（无）'}
   - gradients：签名渐变(如有)，每条写完整 CSS。
   - signature：3-6 条**最有辨识度的细节处理**(毛玻璃、特定卡片质感、强调色用法、图标风格等)，确保高级感不丢。
   - componentRules：卡片/按钮/标签/列表的具体处理规则。
+  - **feel：把审美画像的"气质"蒸馏成组件模板能直接吃的 token**（这是后续组件化渲染的关键，必须给）：
+    - spacing：基准间距 px(6-32)，密集风格给小、疏朗风格给大（从 DNA 的 spacing/留白判断）。
+    - fontBase：基准字号 px(12-18)，由 typography 的正文字号定。
+    - cardStyle："shadow"(投影卡)|"outline"(描边卡)|"flat"(扁平)，按 DNA 的卡片质感选。
+    - gradientHeader：横幅是否用渐变(true/false)，看 DNA 有无签名渐变。
+    - accentBar：卡片/列表是否加主色强调条(true/false)，权威/厚重风可开。
+    - glass：外壳是否毛玻璃(true/false)，看 signature 有无毛玻璃。
   这一步等于"先建设计系统"，宁可写满也不要含糊——精度全靠它锁住。
 - **globalNav 是整个 app 唯一的一份共享导航，定一次、全页通用**：type 取 bottom-tab / top-nav / sidebar / none；items 是 2-5 个导航项，每项含 key（英文标识）、label（简体中文）、icon（英文图标名，如 home/list/search/user）。所有页面都必须复用**完全相同**的这套 items，绝不允许某些页面多一项少一项或改名。
 - 每个 page 用 navKey 标注它对应 globalNav 里哪一项被激活（navKey 必须等于某个 globalNav.items[].key）；不需要导航的页面（如登录/详情）navKey 留空、type 仍按全局。
