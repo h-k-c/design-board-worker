@@ -1966,28 +1966,15 @@ props schema：${def ? def.props : '{}'}
 
     const compatBase = (fallback) => (baseUrl || fallback).replace(/\/$/, '')
 
-    // Normalize a user-entered role base URL into a working chat/completions URL.
-    // Tolerates: missing /v1, trailing slash, and http:// on a remote host (the
-    // tunnel redirects http→https which turns POST into GET → breaks the call).
-    const roleEndpointUrl = (raw) => {
-      let u = String(raw || '').trim().replace(/\/+$/, '')
-      if (!u) return ''
-      if (/^http:\/\//i.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?)/i.test(u)) {
-        u = u.replace(/^http:\/\//i, 'https://')
-      }
-      if (/\/chat\/completions$/i.test(u)) return u
-      if (/\/v\d+$/i.test(u)) return `${u}/chat/completions`
-      return `${u}/v1/chat/completions`
-    }
-
     // Resolve the OpenAI-compatible endpoint + key for the chosen provider.
     function resolveEndpoint() {
-      // Self-contained role endpoints (independent of the LLM provider):
+      // Self-contained role endpoints (independent of the LLM provider). The user
+      // supplies the full OpenAI-compatible base (to /v1); we just append the path.
       if (useVision) {
-        return { apiUrl: roleEndpointUrl(visionCfg.baseUrl), key: visionCfg.apiKey || 'lm-studio', model: visionCfg.model }
+        return { apiUrl: `${String(visionCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: visionCfg.apiKey || 'lm-studio', model: visionCfg.model }
       }
       if (useFill) {
-        return { apiUrl: roleEndpointUrl(fillCfg.baseUrl), key: fillCfg.apiKey || 'lm-studio', model: fillCfg.model }
+        return { apiUrl: `${String(fillCfg.baseUrl).replace(/\/$/, '')}/chat/completions`, key: fillCfg.apiKey || 'lm-studio', model: fillCfg.model }
       }
       switch (provider) {
         case 'qwen': return { apiUrl: `${compatBase('https://dashscope.aliyuncs.com/compatible-mode/v1')}/chat/completions`, key: apiKey || env.QWEN_API_KEY, model: resolvedModel }
