@@ -822,7 +822,8 @@ async function handleAI(req, env, userId) {
     appName = '',
     designIntent = '',
     globalStyle = null,
-    designSystem = null,       // screen-generate: full M3 theme {roles,typography,spacing,fonts…}
+    designSystem = null,       // screen-generate/variants: full M3 theme
+    variantOptions = null,     // screen-variants: {variantCount,creativeRange,aspects}
     globalNav = null,
     uiContract = null,
     page = null,
@@ -1816,11 +1817,26 @@ ${chromeRule ? '\n' + chromeRule + '\n' : ''}
   // ── screen-variants: generate 2–3 layout/style variants of the same page ──
   function buildScreenVariantsPrompt() {
     const base = buildScreenGeneratePrompt()
+    const vOpts = variantOptions || {}
+    const count = Math.max(1, Math.min(5, Number.parseInt(vOpts.variantCount, 10) || 3))
+    const creativeRange = vOpts.creativeRange || 'EXPLORE'
+    const aspects = Array.isArray(vOpts.aspects) && vOpts.aspects.length
+      ? vOpts.aspects.join(', ')
+      : 'LAYOUT, COLOR_SCHEME, TEXT_FONT'
+
+    const rangeMap = {
+      REFINE: '做**微调**——在原版基础上做小幅度变化，保留最初的设计意图和结构',
+      EXPLORE: '做**探索**——变化布局、配色或排版，但保持整体调性一致',
+      REIMAGINE: '做**重新构想**——可以大胆改变结构、风格，挑战原有设计',
+    }
+    const rangeRule = rangeMap[creativeRange] || rangeMap.EXPLORE
+
     const variantSystem = `## 变体生成模式
-你需要为 **同一个页面内容** 生成 2–3 个**布局或风格不同的变体**：
-1. 保持内容（文字、功能）基本不变，但改变布局结构（卡片 vs 列表、网格 vs 堆叠、顶部 vs 侧边导航等）或视觉装饰风格（扁平 vs 玻璃态、紧凑 vs 通透等）。
-2. 每个变体是一个完整的、自包含的 HTML 页面。
-3. 在输出中用 \`<!-- variant: <简短描述> -->\` 注释分隔每个变体。`
+- 生成 **${count}** 个不同变体。
+- 变体范围：${rangeRule}。
+- 重点变化的方面：**${aspects}**（其他方面尽量保持不变）。
+- 每个变体是完整、自包含的HTML页面。
+- 用 \`<!-- variant: <描述> -->\` 分隔每个变体。`
     return { ...base, systemPrompt: variantSystem + '\n\n' + base.systemPrompt }
   }
 
