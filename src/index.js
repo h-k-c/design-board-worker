@@ -1775,16 +1775,16 @@ ${styleStr}
   // (small model) only outputs props JSON matching one component's schema.
   const COMPONENT_CATALOG = {
     Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient", "accent": "primary" }' },
-    SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str? }' },
-    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool?, "icon": str? } ] }（2-8个；icon 可选，取自图标枚举）' },
-    CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', props: '{ "title": str?, "variant": "icon-tile|plain", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral" } ] }（2-8张）' },
-    ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', props: '{ "title": str?, "variant": "thumb|minimal", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str? } ] }（2-12条）' },
+    SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str?, "icon": iconName? }（icon 可选：标题前的小图标）' },
+    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool?, "icon": iconName? } ] }（2-8个；icon 可选，取自图标枚举）' },
+    CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', props: '{ "title": str?, "variant": "icon-tile|plain", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-8张；badge 可选：卡片右上角标，如“新”“热”）' },
+    ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', props: '{ "title": str?, "variant": "thumb|minimal", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str?, "trailing": str? } ] }（2-12条；trailing 可选：行右侧的数值/状态）' },
     SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
-    DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]? }' },
-    KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', props: '{ "title": str?, "rows": [ { "key": str, "value": str } ] }' },
-    StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', props: '{ "title": str?, "items": [ { "value": str, "unit": str?, "label": str } ] }（2-6个）' },
-    MediaCard:     { use: '特性大图卡（顶部彩色图区+标题描述，用于专题/功能推荐）', layout: 'span:full', props: '{ "title": str?, "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral" } ] }（2-4张）' },
-    Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', props: '{ "title": str?, "items": [ { "time": str?, "title": str, "desc": str? } ] }（2-8条）' },
+    DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]?, "icon": iconName? }（icon 可选：标题前图标）' },
+    KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', props: '{ "title": str?, "rows": [ { "key": str, "value": str, "icon": iconName? } ] }（每行 icon 可选）' },
+    StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', props: '{ "title": str?, "items": [ { "value": str, "unit": str?, "label": str, "icon": iconName?, "trend": str? } ] }（2-6个；trend 可选：涨跌如“+12%”/“-3%”，自动绿涨红跌；icon 可选）' },
+    MediaCard:     { use: '特性大图卡（顶部彩色图区+标题描述，用于专题/功能推荐）', layout: 'span:full', props: '{ "title": str?, "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-4张；badge 可选：图区角标）' },
+    Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', props: '{ "title": str?, "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；icon 可选：节点图标；tag 可选：标题旁小标记）' },
     NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
   }
   const ICON_NAMES = 'home list category grid search user bell star heart settings globe book file shield clock chart tag bookmark'
