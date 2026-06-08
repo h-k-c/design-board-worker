@@ -842,7 +842,7 @@ async function handleAI(req, env, userId) {
   // OFF for the code-emitting page steps: thinking there mostly burns tokens and
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
-  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle', 'spec-draft', 'spec-extract', 'screen-generate'])
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle', 'spec-draft', 'spec-extract', 'screen-generate', 'screen-variants'])
   // NOTE: a component edit stays no-reasoning. Enabling reasoning_effort:'high'
   // burned the token budget and truncated the small props JSON → parse failure.
   // The big model + an explicit edit prompt is enough without thinking.
@@ -1813,6 +1813,17 @@ ${chromeRule ? '\n' + chromeRule + '\n' : ''}
     return { systemPrompt, userPrompt, imageUrls }
   }
 
+  // ── screen-variants: generate 2–3 layout/style variants of the same page ──
+  function buildScreenVariantsPrompt() {
+    const base = buildScreenGeneratePrompt()
+    const variantSystem = `## 变体生成模式
+你需要为 **同一个页面内容** 生成 2–3 个**布局或风格不同的变体**：
+1. 保持内容（文字、功能）基本不变，但改变布局结构（卡片 vs 列表、网格 vs 堆叠、顶部 vs 侧边导航等）或视觉装饰风格（扁平 vs 玻璃态、紧凑 vs 通透等）。
+2. 每个变体是一个完整的、自包含的 HTML 页面。
+3. 在输出中用 \`<!-- variant: <简短描述> -->\` 注释分隔每个变体。`
+    return { ...base, systemPrompt: variantSystem + '\n\n' + base.systemPrompt }
+  }
+
   function buildPageEditPrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，保持现状）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
@@ -2123,7 +2134,7 @@ ${gs}
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
-  const prompt = mode === 'page-restyle' ? buildPageRestylePrompt() : mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : (mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'screen-generate' ? buildScreenGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
+  const prompt = mode === 'page-restyle' ? buildPageRestylePrompt() : mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : (mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'screen-generate' ? buildScreenGeneratePrompt() : mode === 'screen-variants' ? buildScreenVariantsPrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
@@ -2204,7 +2215,7 @@ ${gs}
         // page-plan bumped to 8192: Gemini 2.5/3.x "thinking" models spend part
         // of the budget reasoning, so a 4096 cap could truncate the JSON before
         // the plan is emitted → unparseable result.
-        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'screen-generate' || mode === 'page-edit' || mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : mode === 'component-fill' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'screen-generate' || mode === 'screen-variants' || mode === 'page-edit' || mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : mode === 'component-fill' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         // Always stream. Non-streaming long generations get killed by idle
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
