@@ -783,7 +783,10 @@ async function handleAI(req, env, userId) {
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
   const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle'])
-  const enableReasoning = !NO_REASONING_MODES.has(mode)
+  // A targeted component edit benefits from reasoning to grasp the instruction's
+  // intent — allow it even though bulk component-fill stays no-reasoning.
+  const isComponentEdit = mode === 'component-fill' && !!body.instruction
+  const enableReasoning = isComponentEdit || !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
@@ -1775,10 +1778,37 @@ ${catalog}
 - 数字、价格、日期、评分、标签等要符合该领域常识与量级，不要写明显假的占位数字。
 - 所有面向人阅读的文本一律简体中文，且要贴合内容要点、具体真实，禁止“示例/占位/Lorem”。
 - 严格只返回一个 JSON 对象（即 props 本体），无解释/thought/markdown。`
-    const curProps = body.currentProps && typeof body.currentProps === 'object' ? JSON.stringify(body.currentProps) : ''
-    const editLine = body.instruction
-      ? `\n\n【这是一次定向编辑】当前该组件的 props 如下：\n${curProps || '（无）'}\n用户修改要求："${body.instruction}"\n只按要求改动相关字段，其余字段尽量保留原值；输出完整的新 props JSON。`
-      : ''
+    const curProps = body.currentProps && typeof body.currentProps === 'object' ? JSON.stringify(body.currentProps, null, 2) : ''
+
+    // ── EDIT PATH ── instruction present → make the edit the PRIMARY task, with
+    // current props front-and-center, so the model applies a targeted change
+    // instead of regenerating the whole component.
+    if (body.instruction) {
+      const editSystem = `你在对一个已有 UI 组件做"定向编辑"。你会收到该组件当前的 props（结构化 JSON）和一条用户修改指令。你的任务：理解指令意图，在当前 props 基础上做**最小必要的改动**，输出修改后的完整 props JSON。
+规则：
+- 这是"改"不是"重做"：以当前 props 为基底，只动与指令相关的字段，其余字段一律原样保留（包括已有的真实文案、数字、icon）。
+- 严格符合该组件的 props schema：字段名、枚举值（颜色只用 primary/accent2/neutral；尺寸/变体只用 schema 列出的枚举；icon 只能取：${ICON_NAMES}）。
+- 认真领会指令的真实意图再改。例如"增强标题层级"=放大/加粗标题或调整其 size/weight 枚举；"减弱边框"=调 border/卡片样式枚举往更轻；"换个图标"=改 icon 名；"文案更专业"=改写对应文本但保持同领域同主题。
+- 若指令要求的改动该 schema 根本不支持（如该组件没有"隐藏文字只留图标"的字段），则在 schema 允许范围内做最接近的合理调整，不要凭空加字段。
+- 不要把已有真实内容替换成占位/示例/空白，也不要跑题到与产品无关的话题。
+- 只返回一个完整的 props JSON 对象，无解释/thought/markdown。`
+      const editUser = `产品名：${appName || '（未给出）'}
+产品设计意图：${designIntent || '（无）'}
+所属页面：${body.pageTitle || '（未给出）'}
+组件：${comp}（用途：${def ? def.use : ''}）
+props schema：${def ? def.props : '{}'}
+配色板：${palette}
+
+【当前 props】
+${curProps || '（无，按 schema 合理生成）'}
+
+【用户修改指令】
+"${body.instruction}"
+
+请在当前 props 基础上执行上述修改，输出修改后的完整 props JSON 对象（只返回 JSON）。`
+      return { systemPrompt: editSystem, userPrompt: editUser, imageUrls: [] }
+    }
+
     const userPrompt = `产品名：${appName || '（未给出，从下方设计意图与内容要点推断领域）'}
 产品设计意图：${designIntent || '（无）'}
 所属页面：${body.pageTitle || '（未给出）'}
@@ -1786,7 +1816,7 @@ ${catalog}
 用途：${def ? def.use : ''}
 props schema：${def ? def.props : '{}'}
 配色板（供你理解 primary 等枚举对应的真实色，但你输出仍用枚举名）：${palette}
-内容要点 contentHints：${hints || '（无：请严格按产品名+设计意图所属领域 + 本组件用途，填充该领域真实具体的中文内容，绝不要用占位/示例/无关话题）'}${editLine}
+内容要点 contentHints：${hints || '（无：请严格按产品名+设计意图所属领域 + 本组件用途，填充该领域真实具体的中文内容，绝不要用占位/示例/无关话题）'}
 
 请确保每条文案都能直接放进这个真实产品里、并紧扣"产品名+设计意图+所属页面"的主题，读起来像该领域的真实数据。只返回符合该 schema 的 props JSON 对象。`
     return { systemPrompt, userPrompt, imageUrls: [] }
@@ -1858,7 +1888,11 @@ ${gs}
   // A fill endpoint only needs url + model — local endpoints (LM Studio) have NO
   // API key, so don't require one (else component-fill silently falls back to the
   // big model and hammers it).
-  const useFill = mode === 'component-fill' && fillCfg && fillCfg.baseUrl && fillCfg.model
+  // Bulk content-fill (no instruction) → small fill model for parallel speed.
+  // A TARGETED EDIT (instruction present) → keep it on the BIG llm: edits are
+  // one-at-a-time and need real instruction comprehension, which the tiny fill
+  // model lacks (it was "完全没理解" the edit ask). Quality > speed here.
+  const useFill = mode === 'component-fill' && !body.instruction && fillCfg && fillCfg.baseUrl && fillCfg.model
   // Dedicated, FULLY SEPARATE vision role: vision tasks (大爆炸/图片分析) point at
   // their own self-contained endpoint (url+key+model), independent of the text
   // LLM. So setting the LLM to a local text model never drags vision onto it.
