@@ -783,10 +783,10 @@ async function handleAI(req, env, userId) {
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
   const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle'])
-  // A targeted component edit benefits from reasoning to grasp the instruction's
-  // intent — allow it even though bulk component-fill stays no-reasoning.
-  const isComponentEdit = mode === 'component-fill' && !!body.instruction
-  const enableReasoning = isComponentEdit || !NO_REASONING_MODES.has(mode)
+  // NOTE: a component edit stays no-reasoning. Enabling reasoning_effort:'high'
+  // burned the token budget and truncated the small props JSON → parse failure.
+  // The big model + an explicit edit prompt is enough without thinking.
+  const enableReasoning = !NO_REASONING_MODES.has(mode)
 
   // Platform → concrete layout / viewport constraints injected into prompts.
   function platformSpec(p) {
@@ -1941,7 +1941,7 @@ ${gs}
         // page-plan bumped to 8192: Gemini 2.5/3.x "thinking" models spend part
         // of the budget reasoning, so a 4096 cap could truncate the JSON before
         // the plan is emitted → unparseable result.
-        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : mode === 'component-fill' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         // Always stream. Non-streaming long generations get killed by idle
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
