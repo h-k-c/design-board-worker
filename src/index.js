@@ -1774,17 +1774,17 @@ ${styleStr}
   // (big model) only picks components + layout + contentHints; the fill step
   // (small model) only outputs props JSON matching one component's schema.
   const COMPONENT_CATALOG = {
-    Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient", "accent": "primary" }' },
+    Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', vr: 'solid|gradient|minimal|aurora', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient|minimal|aurora", "accent": "primary" }（minimal=浅底大字，aurora=深底柔光）' },
     SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str?, "icon": iconName? }（icon 可选：标题前的小图标）' },
-    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool?, "icon": iconName? } ] }（2-8个；icon 可选，取自图标枚举）' },
-    CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', props: '{ "title": str?, "variant": "icon-tile|plain", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-8张；badge 可选：卡片右上角标，如“新”“热”）' },
-    ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', props: '{ "title": str?, "variant": "thumb|minimal", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str?, "trailing": str? } ] }（2-12条；trailing 可选：行右侧的数值/状态）' },
+    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', vr: 'pill|underline|outline', props: '{ "variant": "pill|underline|outline", "items": [ { "label": str, "active": bool?, "icon": iconName? } ] }（2-8个；icon 可选，取自图标枚举）' },
+    CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', vr: 'icon-tile|plain|list|cover', props: '{ "title": str?, "variant": "icon-tile|plain|list|cover", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-8张；list=横向行，cover=顶部色带；badge 可选：卡片右上角标，如“新”“热”）' },
+    ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', vr: 'thumb|minimal|card', props: '{ "title": str?, "variant": "thumb|minimal|card", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str?, "trailing": str? } ] }（2-12条；card=每条独立卡片；trailing 可选：行右侧的数值/状态）' },
     SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
     DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]?, "icon": iconName? }（icon 可选：标题前图标）' },
-    KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', props: '{ "title": str?, "rows": [ { "key": str, "value": str, "icon": iconName? } ] }（每行 icon 可选）' },
-    StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', props: '{ "title": str?, "items": [ { "value": str, "unit": str?, "label": str, "icon": iconName?, "trend": str? } ] }（2-6个；trend 可选：涨跌如“+12%”/“-3%”，自动绿涨红跌；icon 可选）' },
-    MediaCard:     { use: '特性大图卡（顶部彩色图区+标题描述，用于专题/功能推荐）', layout: 'span:full', props: '{ "title": str?, "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-4张；badge 可选：图区角标）' },
-    Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', props: '{ "title": str?, "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；icon 可选：节点图标；tag 可选：标题旁小标记）' },
+    KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', vr: 'default|striped|cards', props: '{ "title": str?, "variant": "default|striped|cards", "rows": [ { "key": str, "value": str, "icon": iconName? } ] }（striped=斑马纹，cards=每对成卡；每行 icon 可选）' },
+    StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', vr: 'default|plain|bar', props: '{ "title": str?, "variant": "default|plain|bar", "items": [ { "value": str, "unit": str?, "label": str, "icon": iconName?, "trend": str? } ] }（2-6个；plain=无卡格，bar=横向条；trend 可选：涨跌如“+12%”/“-3%”，自动绿涨红跌；icon 可选）' },
+    MediaCard:     { use: '特性大图卡（顶部彩色图区+标题描述，用于专题/功能推荐）', layout: 'span:full', vr: 'default|horizontal', props: '{ "title": str?, "variant": "default|horizontal", "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-4张；horizontal=左图右文；badge 可选：图区角标）' },
+    Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', vr: 'default|cards', props: '{ "title": str?, "variant": "default|cards", "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；cards=每条成卡；icon 可选：节点图标；tag 可选：标题旁小标记）' },
     NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
   }
   const ICON_NAMES = 'home list category grid search user bell star heart settings globe book file shield clock chart tag bookmark'
@@ -1792,7 +1792,7 @@ ${styleStr}
   function buildPageSkeletonPrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle) : '（无）'
     const catalog = Object.entries(COMPONENT_CATALOG)
-      .map(([name, d]) => `- ${name}：${d.use}${d.layout !== '-' ? `（布局参数 ${d.layout}）` : ''}`).join('\n')
+      .map(([name, d]) => `- ${name}：${d.use}${d.layout !== '-' ? `（布局参数 ${d.layout}）` : ''}${d.vr ? `【可选变体 variant：${d.vr}】` : ''}`).join('\n')
     const systemPrompt = `你是移动端页面的版面架构师。你只做"版面决策"，绝不写任何 HTML/CSS。给你设计系统与页面意图，你把这一页拆成有序的组件块，并为每块给出内容要点。
 规则：
 - 只能使用下列已注册组件，不许发明新组件：
@@ -1803,6 +1803,7 @@ ${catalog}
 - 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
 - icon 名只能取：${ICON_NAMES}。
 - 一页 4-8 个块，主视觉靠前、次要靠后，符合移动端竖屏浏览节奏。
+- 【主动变换 variant，避免单调】凡是带"可选变体"的组件，都要为它选一个最贴合该内容的 variant 填进块的 "variant" 字段；并且同一页里尽量让相邻/同类块用不同变体（比如这页 CardGrid 用 cover、列表用 card、数据用 bar），让整页有节奏、不要每块都长一样。根据内容语义选：入口/专题→cover 或 icon-tile，榜单/横向条目→list，新闻流→card，对比数据→bar，档案→striped/cards，历程→cards。
 - 严格只返回一个 JSON 对象，无任何解释/thought/markdown。`
     const userPrompt = `产品名：${appName || ''}
 设计意图：${designIntent || ''}
