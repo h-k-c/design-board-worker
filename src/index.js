@@ -163,6 +163,65 @@ async function saveJsonSetting(env, userId, key, value) {
   ).bind(userId, key, JSON.stringify(value ?? null)).run()
 }
 
+// ── AI call failure log ──────────────────────────────────────────────────────
+// Only FAILED calls are persisted (success stores nothing). Self-bootstrapping:
+// CREATE TABLE IF NOT EXISTS runs alongside the insert so it works even if the
+// migration wasn't applied. Best-effort: never throws into the caller.
+const AI_LOG_DDL = `CREATE TABLE IF NOT EXISTS ai_call_logs (
+  id TEXT PRIMARY KEY, created_at TEXT NOT NULL, user_id TEXT, source TEXT,
+  mode TEXT, component TEXT, instruction TEXT, error TEXT, raw_excerpt TEXT, context TEXT
+)`
+function clip(s, n) { s = (s == null ? '' : String(s)); return s.length > n ? s.slice(0, n) : s }
+
+async function logAiFailure(env, userId, row = {}) {
+  if (!env.DB) return
+  try {
+    await env.DB.batch([
+      env.DB.prepare(AI_LOG_DDL),
+      env.DB.prepare(
+        `INSERT INTO ai_call_logs (id, created_at, user_id, source, mode, component, instruction, error, raw_excerpt, context)
+         VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(
+        crypto.randomUUID(), userId || null, clip(row.source || 'worker', 16),
+        clip(row.mode, 40), clip(row.component, 60), clip(row.instruction, 500),
+        clip(row.error, 1000), clip(row.rawExcerpt, 4000),
+        row.context ? clip(JSON.stringify(row.context), 2000) : null,
+      ),
+    ])
+  } catch (e) {
+    console.error('[ai-log] insert failed:', e?.message || e)
+  }
+}
+
+// POST /api/logs — client reports a failed AI call (fire-and-forget).
+async function handleLogAi(req, env, userId) {
+  let body = {}
+  try { body = await req.json() } catch { /* ignore */ }
+  await logAiFailure(env, userId, {
+    source: 'client', mode: body.mode, component: body.component,
+    instruction: body.instruction, error: body.error, rawExcerpt: body.rawExcerpt,
+    context: body.context,
+  })
+  return json({ ok: true })
+}
+
+// GET /api/logs?limit=50 — read recent failures for this user.
+async function handleGetLogs(req, env, userId) {
+  if (!env.DB) return json({ logs: [] })
+  const url = new URL(req.url)
+  const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit') || '50', 10) || 50, 1), 200)
+  try {
+    await env.DB.prepare(AI_LOG_DDL).run()
+    const { results } = await env.DB.prepare(
+      `SELECT id, created_at, source, mode, component, instruction, error, raw_excerpt, context
+       FROM ai_call_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+    ).bind(userId, limit).all()
+    return json({ logs: results || [] })
+  } catch (e) {
+    return json({ logs: [], error: e?.message || 'query failed' })
+  }
+}
+
 function mergeProviderSettings(existing = {}, incoming = {}) {
   const current = existing && typeof existing === 'object' ? existing : {}
   const next = incoming && typeof incoming === 'object' ? incoming : {}
@@ -2233,6 +2292,8 @@ async function handleRequest(req, env) {
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env, userId)
+    if (path === '/api/logs' && req.method === 'POST') return handleLogAi(req, env, userId)
+    if (path === '/api/logs' && req.method === 'GET') return handleGetLogs(req, env, userId)
 
     // Generated pages (Phase 2 durable persistence)
     if (path === '/api/generated/groups' && req.method === 'POST') return handleCreateGroup(req, env, userId)
