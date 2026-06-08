@@ -1717,7 +1717,7 @@ ${styleStr}
   const COMPONENT_CATALOG = {
     Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient", "accent": "primary" }' },
     SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str? }' },
-    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool? } ] }（2-8个）' },
+    TagChips:      { use: '分类/筛选标签胶囊', layout: '-', props: '{ "variant": "pill|underline", "items": [ { "label": str, "active": bool?, "icon": str? } ] }（2-8个；icon 可选，取自图标枚举）' },
     CardGrid:      { use: '并列卡片网格（专题/分类入口）', layout: 'cols:2|3', props: '{ "title": str?, "variant": "icon-tile|plain", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral" } ] }（2-8张）' },
     ListFeed:      { use: '信息流/长内容列表', layout: 'span:full', props: '{ "title": str?, "variant": "thumb|minimal", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str? } ] }（2-12条）' },
     SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
