@@ -822,6 +822,7 @@ async function handleAI(req, env, userId) {
     appName = '',
     designIntent = '',
     globalStyle = null,
+    designSystem = null,       // screen-generate: full M3 theme {roles,typography,spacing,fonts…}
     globalNav = null,
     uiContract = null,
     page = null,
@@ -841,7 +842,7 @@ async function handleAI(req, env, userId) {
   // OFF for the code-emitting page steps: thinking there mostly burns tokens and
   // latency without improving the HTML, so disabling it noticeably speeds up
   // page generation. (Revisit per-mode if a step's quality regresses.)
-  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle', 'spec-draft', 'spec-extract'])
+  const NO_REASONING_MODES = new Set(['page-generate', 'page-edit', 'page-block-edit', 'component-fill', 'page-skeleton', 'page-restyle', 'spec-draft', 'spec-extract', 'screen-generate'])
   // NOTE: a component edit stays no-reasoning. Enabling reasoning_effort:'high'
   // burned the token budget and truncated the small props JSON → parse failure.
   // The big model + an explicit edit prompt is enough without thinking.
@@ -1722,6 +1723,96 @@ ${pageStr}
     return { systemPrompt, userPrompt, imageUrls }
   }
 
+  // ── screen-generate: M3-design-system-driven whole-page generate ──────────
+  // Accepts a full designSystem (roles + typography + spacing from Phase 0/1)
+  // and instructs the model to write semantic Tailwind classes referencing the
+  // injected named colors (bg-surface / text-on-primary / …) + Material Symbols
+  // icons.  No hex colours, no bare CSS variables — the palette is the injected
+  // tailwind.config colors (§2.8).
+  function buildScreenGeneratePrompt() {
+    const ds = designSystem || {}
+    const roles = ds.roles || {}
+    const typo = ds.typography || {}
+    const spacing = ds.spacing || {}
+
+    const colorRolesList = Object.entries(roles)
+      .map(([k, v]) => `  ${k} → ${v}`)
+      .join('\n')
+    const typoList = Object.entries(typo)
+      .map(([level, t]) => `  ${level}: ${t.fontFamily} ${t.fontSize}/${t.lineHeight} w${t.fontWeight}${t.letterSpacing ? ' tracking[' + t.letterSpacing + ']' : ''}`)
+      .join('\n')
+    const spacingList = Object.entries(spacing)
+      .map(([k, v]) => `  ${k}: ${v}`)
+      .join('\n')
+
+    const hf = ds.headlineFont || 'Source Serif 4'
+    const bf = ds.bodyFont || 'Literata'
+    const lf = ds.labelFont || 'Inter'
+    const rn = ds.roundness || 12
+    const persona = ds.brandPersona || designIntent || ''
+    const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
+
+    // Shared chrome (nav) — same deterministic injection as page-generate
+    const navStr = globalNav && Array.isArray(globalNav.items) && globalNav.items.length
+      ? JSON.stringify(globalNav)
+      : ''
+    const navRule = navStr
+      ? `全局共享导航（globalNav，全 app 唯一）：${navStr}\n当前页 navKey：${page?.navKey || '（无）'}\n如果 globalNav.type 不是 none，本页必须输出一个导航区块，**逐字复用 globalNav.items 的 label/顺序/数量，绝不增删改名**；只把 navKey 对应的那一项设为激活态。type=bottom-tab 放底部、top-nav 放顶部、sidebar 放侧边。`
+      : '本页没有全局导航约束，按页面规划自行决定是否需要导航。'
+
+    const chrome = navStr ? buildSharedChrome(globalStyle || {}, globalNav, page?.navKey) : null
+    const chromeRule = navStr && chrome ? [
+      chrome.navHtml
+        ? `## 强制共享导航（必须原样粘贴，全 app 逐字一致）\n- 本页必须包含下面这段导航区块 HTML，**原样粘贴，不要增删改导航项的文字/数量/顺序/图标**，只允许保留我已设好的当前页激活态：\n\`\`\`html\n${chrome.navHtml}\n\`\`\`\n- ${chrome.navType === 'bottom-tab' ? '它是固定底部栏，请给页面主内容底部留出 pb-20 的空间避免被遮挡。' : chrome.navType === 'top-nav' ? '它是顶部栏，放在页面最上方。' : '它是侧边栏，与主内容左右并排（外层用 flex）。'}`
+        : '',
+    ].filter(Boolean).join('\n\n') : ''
+
+    const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师。你将为「${pf.label}」产品的一个页面直接产出**一份自包含、可立即预览、视觉精致的前端代码**（HTML + 内联 CSS + 必要 JS）。
+
+## 设计系统（你的视觉宪法）
+你**只被允许使用下面列出的具名颜色、字体、圆角和间距**。这是注入的 Tailwind 配置的全部内容，禁止使用这些名称之外的任何颜色值：
+### 颜色语义角色（47 个，全部可用）
+${colorRolesList}
+
+### 排版刻度（8 级，字号/字重/行高必须从这里面取）
+${typoList}
+- 标题用 \`font-headline\`、正文用 \`font-body\`、标签/小字用 \`font-label\`
+
+### 间距刻度
+${spacingList}
+
+### 字体
+- 标题(headline): ${hf}  |  正文(body): ${bf}  |  标签(label): ${lf}
+- 图标：用 Material Symbols 字体，写成 \`<span class="material-symbols-outlined">home</span>\`
+
+### 圆角
+- 默认圆角 ${rn}px，用 Tailwind rounded 对应档位
+
+### 品牌人格
+${persona || '（未设定，按内容自行揣摩气质）'}
+
+## 页面规则
+- ${pf.rules}
+- 固定视口 ${viewport.width}x${viewport.height}；移动端 w-full、min-h-screen 铺满，禁止更小的 max-width 居中壳。
+${chromeRule ? '\n' + chromeRule + '\n' : ''}
+## 用 Tailwind 语义类（铁律）
+1. **颜色只准用上面列出的具名角色**：\`bg-surface\`、\`text-on-primary-container\`、\`border-outline-variant\` 等。**禁止裸 hex、禁止 var()、禁止 bg-[#xxx]**。
+2. **主色 primary / on-primary / primary-container 必须贯穿正文每一页**：标题强调、图标淡底圆角块、标签 chip、CTA 按钮都要带主色。**严禁白底黑线框半成品**。
+3. 字体：\`font-headline\` / \`font-body\` / \`font-label\`。
+4. 图标：Material Symbols 字体。
+5. 圆角用 Tailwind 标准档位映射（${rn}px→rounded-lg 等），间距用上面刻度。
+
+## 内容要求
+- 页面规划：${pageStr}
+- 整页 8–14 个具体内容单元，中文真实内容。无真实图片时用 CSS 渐变/SVG 占位。
+- 每节包成 \`<section data-block="slug" data-block-label="中文标签">\`
+- 覆盖 hover/active/selected/empty/loading/error 中≥4 种状态。`
+
+    const userPrompt = `请生成完整的 HTML 页面代码。直接输出 HTML（从 <!DOCTYPE html> 或 <html> 开始），**不要包裹在 markdown 代码块里**。`
+    const imageUrls = images.map(img => img.imageUrl || img).filter(Boolean).slice(0, 8)
+    return { systemPrompt, userPrompt, imageUrls }
+  }
+
   function buildPageEditPrompt() {
     const styleStr = globalStyle ? JSON.stringify(globalStyle, null, 2) : '（无，保持现状）'
     const contractStr = uiContract ? JSON.stringify(uiContract, null, 2) : '（无）'
@@ -2032,7 +2123,7 @@ ${gs}
     return { systemPrompt, userPrompt, imageUrls: [] }
   }
 
-  const prompt = mode === 'page-restyle' ? buildPageRestylePrompt() : mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : (mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
+  const prompt = mode === 'page-restyle' ? buildPageRestylePrompt() : mode === 'polish' ? buildPolishPrompt() : mode === 'video-explosion' ? buildVideoExplosionPrompt() : mode === 'text-explosion' ? buildTextExplosionPrompt() : mode === 'design-explosion' ? buildDesignExplosionPrompt() : mode === 'group' ? buildGroupPrompt() : (mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? buildPagePlanPrompt() : mode === 'page-skeleton' ? buildPageSkeletonPrompt() : mode === 'component-fill' ? buildComponentFillPrompt() : mode === 'page-generate' ? buildPageGeneratePrompt() : mode === 'screen-generate' ? buildScreenGeneratePrompt() : mode === 'page-edit' ? buildPageEditPrompt() : mode === 'page-block-edit' ? buildPageBlockEditPrompt() : mode === 'design-tokens' ? buildDesignTokensPrompt() : buildSinglePrompt()
 
   // Determine if this task needs a vision model or pure LLM
   const needsVision = prompt.imageUrls.length > 0 || mode === 'single' || mode === 'video-explosion'
@@ -2113,7 +2204,7 @@ ${gs}
         // page-plan bumped to 8192: Gemini 2.5/3.x "thinking" models spend part
         // of the budget reasoning, so a 4096 cap could truncate the JSON before
         // the plan is emitted → unparseable result.
-        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : mode === 'component-fill' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
+        max_tokens: (mode === 'page-generate' && fastMode) ? 6144 : (mode === 'page-generate' || mode === 'screen-generate' || mode === 'page-edit' || mode === 'page-plan' || mode === 'spec-draft' || mode === 'spec-extract') ? 8192 : (mode === 'page-block-edit') ? 4096 : mode === 'design-tokens' ? 2048 : mode === 'component-fill' ? 2048 : wantsJson ? 4096 : (mode === 'group' || mode === 'polish') ? 2048 : 1024,
         // Always stream. Non-streaming long generations get killed by idle
         // timeouts on proxies / providers (DeepSeek etc) → "no response".
         stream: true,
@@ -2144,7 +2235,7 @@ ${gs}
       if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
         body.reasoning_effort = /gemini-2\.5/i.test(String(modelName || '')) ? 'none' : 'minimal'
       }
-      const timeoutMs = (mode === 'page-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000
+      const timeoutMs = (mode === 'page-generate' || mode === 'screen-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000
         // Big-model layout planning (skeleton) is as heavy as page-plan → give it
         // the same headroom; component-fill is small but a local model can be slow.
         : (mode === 'page-plan' || mode === 'page-skeleton') ? 150000
