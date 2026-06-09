@@ -2022,7 +2022,7 @@ ${styleStr}
     Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', vr: 'default|cards', props: '{ "title": str?, "variant": "default|cards", "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；cards=每条成卡；icon 可选：节点图标；tag 可选：标题旁小标记）' },
     NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
     ProductCard:   { use: '商品/课程/付费内容卡（图+名+价格+标签），电商/课程/会员场景', layout: 'cols:2', vr: 'grid|list', props: '{ "title": str?, "variant": "grid|list", "items": [ { "title": str, "desc": str?, "price": str?, "origPrice": str?, "tag": str?, "meta": str? } ] }（2-8件；grid=2列带图卡，list=横向行；price 带货币符如 ¥39，origPrice 原价(划线)，meta 如 月销2k/4.8分）' },
-    CellGroup:     { use: '功能菜单/设置项行组（图标+标题+右值/箭头），用于"我的"/设置/账户页', layout: 'span:full', vr: 'default|inset', props: '{ "title": str?, "variant": "default|inset", "rows": [ { "icon": iconName?, "label": str, "desc": str?, "value": str?, "badge": str?, "arrow": bool? } ] }（3-8行；value=右侧值如 已开启/v2.1，badge 如 红点数字，arrow 默认 true 显示右箭头，纯展示项给 false）' },
+    CellGroup:     { use: '功能菜单/设置项行组（图标+标题+右值/箭头），用于"我的"/设置/账户页', layout: 'span:full', vr: 'default|inset', props: '{ "title": str?, "variant": "default|inset", "rows": [ { "icon": iconName?, "label": str, "desc": str?, "value": str?, "badge": str?, "arrow": bool? } ] }（3-8行；value=右侧值如 已开启/v2.1，badge=未读小红点上的数字或极短状态(如 "3" "99+" "NEW")，没有就省略，**绝不要把"红点数字"这四个字本身当内容填**，arrow 默认 true 显示右箭头，纯展示项给 false）' },
     ProfileHeader: { use: '个人中心头部（头像+昵称+签名+统计数字），用户主页/我的页顶部', layout: 'span:full', vr: 'default|cover', props: '{ "variant": "default|cover", "name": str, "bio": str?, "stats": [ { "value": str, "label": str } ] }（cover=带背景封面图；stats 2-4 个如 关注/粉丝/获赞，value 是数字字符串）' },
     Steps:         { use: '步骤条/流程进度（注册引导、订单状态、闯关进度）', layout: 'span:full', vr: 'horizontal|vertical', props: '{ "title": str?, "variant": "horizontal|vertical", "current": number, "items": [ { "title": str, "desc": str? } ] }（3-6步；current=当前步(从0起)；horizontal 适合≤4步短标题，vertical 适合带描述的流程）' },
     Progress:      { use: '进度/完成度列表（标签+进度条+百分比），目标/任务/技能/容量', layout: 'span:full', props: '{ "title": str?, "items": [ { "label": str, "value": number, "caption": str? } ] }（2-6条；value=0-100 百分比数字；caption 可替代百分比文字，如 “8/10 本”）' },
@@ -2108,7 +2108,7 @@ ${pageBlock}
 - 颜色只用枚举名 primary/accent2/neutral，不写十六进制。尺寸/变体只用 schema 列出的枚举。
 - icon 名只能取：${ICON_NAMES}。
 - 【内容必须紧扣产品主题】所有文本必须围绕给定的产品名、设计意图与 contentHints 展开，是该产品所在真实领域里**具体、可信、有信息量**的中文内容。先从产品名+设计意图判断这是什么领域（如外卖/健身/理财/招聘/在线课程/民宿预订…），再据此推断该组件该放什么真实内容。
-- 【严禁占位与无关内容】绝对禁止任何占位符、示例数据、通用默认或与产品主题无关的内容：禁止出现 zhangsan、lisi、John Doe、Jane、Lorem ipsum、"示例标题/示例内容/测试/占位/标题1/卡片1/选项A"，也禁止跟产品无关的随机学科或话题（如理财产品里冒出"一次函数""学 Python""唐诗鉴赏"）。人名、品牌名、商品名、栏目名、数字指标都要换成该领域里说得通的真实具体写法。
+- 【严禁占位与无关内容】绝对禁止任何占位符、示例数据、通用默认或与产品主题无关的内容：禁止出现 zhangsan、lisi、John Doe、Jane、Lorem ipsum、张三、李四、王五、赵六、王二麻子、"示例标题/示例内容/测试/占位/标题1/卡片1/选项A"，也禁止跟产品无关的随机学科或话题（如理财产品里冒出"一次函数""学 Python""唐诗鉴赏"）。**更不要把 props schema 里的字段说明/示例词当成真实内容直接填**（如把"红点数字""未读数字""主标题""一句话描述"原样写进去）。人名一律用真实自然的中文姓名(如 林岚、周屿、苏晓桐 这类，彼此各异不重复)，品牌名、商品名、栏目名、数字指标都要换成该领域里说得通的真实具体写法。
 - 数字、价格、日期、评分、标签等要符合该领域常识与量级，不要写明显假的占位数字。
 - 所有面向人阅读的文本一律简体中文，且要贴合内容要点、具体真实，禁止“示例/占位/Lorem”。
 - 严格只返回一个 JSON 对象（即 props 本体），无解释/thought/markdown。`
