@@ -2044,6 +2044,17 @@ ${catalog}
 - 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
 - icon 名只能取：${ICON_NAMES}。
 - 一页 4-8 个块，主视觉靠前、次要靠后，符合移动端竖屏浏览节奏。
+- 【⚠️ 先符合页面原型，再谈丰富——别发散】先判断这页是什么"类型"，套用该类型的常规形态，不要为了花哨乱选组件。常见原型 → 主体组件：
+  · 设置/偏好/账户/隐私/通知管理 → 主体一定是 CellGroup（行式：图标+名称+右侧开关值/箭头，一项一行）；**绝不要**用 CardGrid 卡片网格去堆设置项。
+  · 个人中心/我的 → 顶部 ProfileHeader，下面若干 CellGroup 分组（可夹一个 StatGrid 概览）。
+  · 纯列表/信息流/消息/通知列表 → ListFeed。
+  · 排行榜/热度榜 → ListFeed 的 rank。
+  · 商品/课程/会员/付费内容列表 → ProductCard。
+  · 详情页 → 以 DetailHeader 开头，配 KeyValueList/Timeline/ReviewList/Progress。
+  · 流程/引导/订单状态/进度 → Steps（+ Progress）。
+  · 数据看板/概览/统计 → StatGrid 为主。
+  · 首页/发现/频道 → Banner + CardGrid/MediaCard + ListFeed 的组合。
+  设置就该像设置、列表就该像列表——形态对了才允许在其内部追求变体丰富。
 - 【主动变换 variant，避免单调】凡是带"可选变体"的组件，都要为它选一个最贴合该内容的 variant 填进块的 "variant" 字段；并且同一页里尽量让相邻/同类块用不同变体（比如这页 CardGrid 用 cover、列表用 card、数据用 bar），让整页有节奏、不要每块都长一样。根据内容语义选：入口/专题→cover 或 icon-tile，书影音/海报封面→cover-tall，作者/用户/人物→avatar，新闻流→card 或 thumb-right，排行榜/热度榜→ListFeed 的 rank，带封面的长内容→ListFeed 的 cover，对比数据→bar，占比/完成度→ring，关键指标+涨跌→trend，档案→striped/cards，历程→cards，沉浸主视觉→Banner 的 overlay 或 split。商品/课程/付费内容→ProductCard，"我的"/设置/账户菜单→CellGroup，个人主页顶部→ProfileHeader，流程/引导/订单状态→Steps，目标/任务/技能完成度→Progress，用户评价/评论→ReviewList。
 - 严格只返回一个 JSON 对象，无任何解释/thought/markdown。`
     const userPrompt = `产品名：${appName || ''}
