@@ -1150,6 +1150,7 @@ ${context ? `【辅助语义证据（补充）】\n${String(context).slice(0, 15
 - 【视觉从画像来、不从凭空造】globalStyle 里的每一项都必须能从上面的审美画像中找到出处：palette 里的十六进制色值一个字不改地照抄过来；typography/radius/shadow/spacing/gradients 里的所有数值全部从画像中提取，不要自己编。签名法则 signature 数组也全部从画像中照搬。
 - 每个给定页面的 sections 必须根据该页的"功能"与"关键内容"来编排：把功能和内容拆成具体的区块/区域，每个区块写明要用的组件（如 Banner/TagChips/CardGrid/ListFeed/StatGrid/SectionHeader/SearchBar/DetailHeader/KeyValueList/MediaCard/Timeline/NoticeBar/ProductCard/CellGroup/ProfileHeader/Steps/Progress/ReviewList/BottomNav）、变体、内容要点（contentHints：实打实的文案方向，让后续小模型有据可依）。
 - 【子页面】navKey 为空的页面是子页面/详情页，也要完整规划 sections。
+- 【底栏导航必须对齐】bottomNav.items 必须正好由规格里 **navKey 非空的那些页面**构成：每个 item 的 key **必须等于**对应页面的 navKey、label=该页中文名、icon 选语义合适的英文图标名（home/list/search/user/grid/book/star/bell/settings 等）；顺序与这些 tab 页一致，2-5 项。navKey 为空的子页面不进 bottomNav。**key 与页面 navKey 不一致会导致底栏失效，务必逐字对齐。**
 - 目标平台为「${pf.label}」，规划必须贴合该平台的形态：${pf.rules}
 - 只输出页面规划的设计层信息，绝对不要输出任何 HTML / CSS / JS 代码。
 - **语言：所有面向人阅读的文本一律用简体中文**。
