@@ -1753,20 +1753,18 @@ ${pageStr}
     const persona = ds.brandPersona || designIntent || ''
     const pageStr = page ? JSON.stringify(page, null, 2) : '（无）'
 
-    // Shared chrome (nav) — same deterministic injection as page-generate
-    const navStr = globalNav && Array.isArray(globalNav.items) && globalNav.items.length
-      ? JSON.stringify(globalNav)
-      : ''
-    const navRule = navStr
-      ? `全局共享导航（globalNav，全 app 唯一）：${navStr}\n当前页 navKey：${page?.navKey || '（无）'}\n如果 globalNav.type 不是 none，本页必须输出一个导航区块，**逐字复用 globalNav.items 的 label/顺序/数量，绝不增删改名**；只把 navKey 对应的那一项设为激活态。type=bottom-tab 放底部、top-nav 放顶部、sidebar 放侧边。`
-      : '本页没有全局导航约束，按页面规划自行决定是否需要导航。'
-
-    const chrome = navStr ? buildSharedChrome(globalStyle || {}, globalNav, page?.navKey) : null
-    const chromeRule = navStr && chrome ? [
-      chrome.navHtml
-        ? `## 强制共享导航（必须原样粘贴，全 app 逐字一致）\n- 本页必须包含下面这段导航区块 HTML，**原样粘贴，不要增删改导航项的文字/数量/顺序/图标**，只允许保留我已设好的当前页激活态：\n\`\`\`html\n${chrome.navHtml}\n\`\`\`\n- ${chrome.navType === 'bottom-tab' ? '它是固定底部栏，请给页面主内容底部留出 pb-20 的空间避免被遮挡。' : chrome.navType === 'top-nav' ? '它是顶部栏，放在页面最上方。' : '它是侧边栏，与主内容左右并排（外层用 flex）。'}`
-        : '',
-    ].filter(Boolean).join('\n\n') : ''
+    // Nav: unlike page-generate (which pastes a hex-based shared chrome), the M3
+    // screen MUST keep the named-colour discipline — so we DESCRIBE the nav and
+    // let the model build it with M3 named classes, not paste raw hex HTML.
+    const navItems = globalNav && Array.isArray(globalNav.items) && globalNav.items.length ? globalNav.items : null
+    const navType = globalNav?.type || 'bottom-tab'
+    const chromeRule = navItems
+      ? `## 共享导航（用 M3 具名色自建，不要用 hex）
+- 导航类型：${navType}（bottom-tab=固定底栏 / top-nav=顶栏 / sidebar=侧栏）。
+- 导航项（逐字复用 label/顺序/数量，当前页 navKey=${page?.navKey || '（无）'} 设为激活态）：${navItems.map(i => i.label).join(' / ')}。
+- 用 Material Symbols 图标 + 具名色：未激活 \`text-on-surface-variant\`，激活 \`text-primary\`；底栏背景 \`bg-surface-container\` + \`border-t border-outline-variant\`。**禁止 hex / bg-white / text-neutral**。
+- bottom-tab 时给正文底部留 \`pb-20\` 避免遮挡。`
+      : '按页面需要自建底部 tab 栏（用 M3 具名色 + Material Symbols 图标）。'
 
     const systemPrompt = `你是世界顶级的产品 UI 设计师兼前端工程师。你将为「${pf.label}」产品的一个页面直接产出**一份自包含、可立即预览、视觉精致的前端代码**（HTML + 内联 CSS + 必要 JS）。
 
