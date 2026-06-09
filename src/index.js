@@ -1147,7 +1147,7 @@ ${context ? `【辅助语义证据（补充）】\n${String(context).slice(0, 15
 要求：
 - 【页面集权威】上面的产品规格里的 N 个页面就是你本次必须规划的全部页面，**一页不能少、一页不能多、不能改名、不能改 id**。逐页生成，保持给定顺序。
 - 【视觉从画像来、不从凭空造】globalStyle 里的每一项都必须能从上面的审美画像中找到出处：palette 里的十六进制色值一个字不改地照抄过来；typography/radius/shadow/spacing/gradients 里的所有数值全部从画像中提取，不要自己编。签名法则 signature 数组也全部从画像中照搬。
-- 每个给定页面的 sections 必须根据该页的"功能"与"关键内容"来编排：把功能和内容拆成具体的区块/区域，每个区块写明要用的组件（如 Banner/TagChips/CardGrid/ListFeed/StatGrid/SectionHeader/SearchBar/DetailHeader/KeyValueList/MediaCard/Timeline/NoticeBar/BottomNav）、变体、内容要点（contentHints：实打实的文案方向，让后续小模型有据可依）。
+- 每个给定页面的 sections 必须根据该页的"功能"与"关键内容"来编排：把功能和内容拆成具体的区块/区域，每个区块写明要用的组件（如 Banner/TagChips/CardGrid/ListFeed/StatGrid/SectionHeader/SearchBar/DetailHeader/KeyValueList/MediaCard/Timeline/NoticeBar/ProductCard/CellGroup/ProfileHeader/Steps/Progress/ReviewList/BottomNav）、变体、内容要点（contentHints：实打实的文案方向，让后续小模型有据可依）。
 - 【子页面】navKey 为空的页面是子页面/详情页，也要完整规划 sections。
 - 目标平台为「${pf.label}」，规划必须贴合该平台的形态：${pf.rules}
 - 只输出页面规划的设计层信息，绝对不要输出任何 HTML / CSS / JS 代码。
@@ -2020,6 +2020,12 @@ ${styleStr}
     MediaCard:     { use: '特性大图卡（顶部图片+标题描述，用于专题/功能推荐）', layout: 'span:full', vr: 'default|horizontal|overlay', props: '{ "title": str?, "variant": "default|horizontal|overlay", "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-4张；default=顶部封面图，horizontal=左图右文，overlay=文字压在大图上沉浸式；badge 可选图区角标）' },
     Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', vr: 'default|cards', props: '{ "title": str?, "variant": "default|cards", "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；cards=每条成卡；icon 可选：节点图标；tag 可选：标题旁小标记）' },
     NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
+    ProductCard:   { use: '商品/课程/付费内容卡（图+名+价格+标签），电商/课程/会员场景', layout: 'cols:2', vr: 'grid|list', props: '{ "title": str?, "variant": "grid|list", "items": [ { "title": str, "desc": str?, "price": str?, "origPrice": str?, "tag": str?, "meta": str? } ] }（2-8件；grid=2列带图卡，list=横向行；price 带货币符如 ¥39，origPrice 原价(划线)，meta 如 月销2k/4.8分）' },
+    CellGroup:     { use: '功能菜单/设置项行组（图标+标题+右值/箭头），用于"我的"/设置/账户页', layout: 'span:full', vr: 'default|inset', props: '{ "title": str?, "variant": "default|inset", "rows": [ { "icon": iconName?, "label": str, "desc": str?, "value": str?, "badge": str?, "arrow": bool? } ] }（3-8行；value=右侧值如 已开启/v2.1，badge 如 红点数字，arrow 默认 true 显示右箭头，纯展示项给 false）' },
+    ProfileHeader: { use: '个人中心头部（头像+昵称+签名+统计数字），用户主页/我的页顶部', layout: 'span:full', vr: 'default|cover', props: '{ "variant": "default|cover", "name": str, "bio": str?, "stats": [ { "value": str, "label": str } ] }（cover=带背景封面图；stats 2-4 个如 关注/粉丝/获赞，value 是数字字符串）' },
+    Steps:         { use: '步骤条/流程进度（注册引导、订单状态、闯关进度）', layout: 'span:full', vr: 'horizontal|vertical', props: '{ "title": str?, "variant": "horizontal|vertical", "current": number, "items": [ { "title": str, "desc": str? } ] }（3-6步；current=当前步(从0起)；horizontal 适合≤4步短标题，vertical 适合带描述的流程）' },
+    Progress:      { use: '进度/完成度列表（标签+进度条+百分比），目标/任务/技能/容量', layout: 'span:full', props: '{ "title": str?, "items": [ { "label": str, "value": number, "caption": str? } ] }（2-6条；value=0-100 百分比数字；caption 可替代百分比文字，如 “8/10 本”）' },
+    ReviewList:    { use: '用户评价/评论列表（头像+昵称+星级+内容）', layout: 'span:full', props: '{ "title": str?, "items": [ { "name": str, "rating": number?, "text": str, "meta": str? } ] }（2-8条；rating=0-5 星；meta 如 日期/已购/版本）' },
   }
   const ICON_NAMES = 'home list category grid search user bell star heart settings globe book file shield clock chart tag bookmark'
 
@@ -2037,7 +2043,7 @@ ${catalog}
 - 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
 - icon 名只能取：${ICON_NAMES}。
 - 一页 4-8 个块，主视觉靠前、次要靠后，符合移动端竖屏浏览节奏。
-- 【主动变换 variant，避免单调】凡是带"可选变体"的组件，都要为它选一个最贴合该内容的 variant 填进块的 "variant" 字段；并且同一页里尽量让相邻/同类块用不同变体（比如这页 CardGrid 用 cover、列表用 card、数据用 bar），让整页有节奏、不要每块都长一样。根据内容语义选：入口/专题→cover 或 icon-tile，书影音/海报封面→cover-tall，作者/用户/人物→avatar，新闻流→card 或 thumb-right，排行榜/热度榜→ListFeed 的 rank，带封面的长内容→ListFeed 的 cover，对比数据→bar，占比/完成度→ring，关键指标+涨跌→trend，档案→striped/cards，历程→cards，沉浸主视觉→Banner 的 overlay 或 split。
+- 【主动变换 variant，避免单调】凡是带"可选变体"的组件，都要为它选一个最贴合该内容的 variant 填进块的 "variant" 字段；并且同一页里尽量让相邻/同类块用不同变体（比如这页 CardGrid 用 cover、列表用 card、数据用 bar），让整页有节奏、不要每块都长一样。根据内容语义选：入口/专题→cover 或 icon-tile，书影音/海报封面→cover-tall，作者/用户/人物→avatar，新闻流→card 或 thumb-right，排行榜/热度榜→ListFeed 的 rank，带封面的长内容→ListFeed 的 cover，对比数据→bar，占比/完成度→ring，关键指标+涨跌→trend，档案→striped/cards，历程→cards，沉浸主视觉→Banner 的 overlay 或 split。商品/课程/付费内容→ProductCard，"我的"/设置/账户菜单→CellGroup，个人主页顶部→ProfileHeader，流程/引导/订单状态→Steps，目标/任务/技能完成度→Progress，用户评价/评论→ReviewList。
 - 严格只返回一个 JSON 对象，无任何解释/thought/markdown。`
     const userPrompt = `产品名：${appName || ''}
 设计意图：${designIntent || ''}
