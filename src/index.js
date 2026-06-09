@@ -865,11 +865,17 @@ async function handleAI(req, env, userId) {
     }
   }
   const pf = platformSpec(platform)
-  const viewport = uiContract?.viewport || (platform === 'miniprogram'
+  // Platform-derived viewport. The explicit `platform` is authoritative — only
+  // honour uiContract.viewport when it matches (avoids a stale 'web' viewport
+  // baked into an old contract overriding a freshly-picked App/小程序 platform).
+  const platformViewport = platform === 'miniprogram'
     ? { platform, width: 375, height: 812 }
     : platform === 'app'
       ? { platform, width: 390, height: 844 }
-      : { platform: 'web', width: 1280, height: 720 })
+      : { platform: 'web', width: 1280, height: 720 }
+  const viewport = (uiContract?.viewport && uiContract.viewport.platform === platform)
+    ? uiContract.viewport
+    : platformViewport
   const pageLimit = Math.max(1, Math.min(8, Number.parseInt(maxPages, 10) || 5))
   const planScope = generationScope === 'single' ? 'single' : 'core'
   const effectivePageLimit = planScope === 'single' ? 1 : pageLimit
