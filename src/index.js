@@ -2034,11 +2034,12 @@ ${styleStr}
     const styleStr = globalStyle ? JSON.stringify(globalStyle) : '（无）'
     const catalog = Object.entries(COMPONENT_CATALOG)
       .map(([name, d]) => `- ${name}：${d.use}${d.layout !== '-' ? `（布局参数 ${d.layout}）` : ''}${d.vr ? `【可选变体 variant：${d.vr}】` : ''}`).join('\n')
-    const systemPrompt = `你是移动端页面的版面架构师。你只做"版面决策"，绝不写任何 HTML/CSS。给你设计系统与页面意图，你把这一页拆成有序的组件块，并为每块给出内容要点。
+    const systemPrompt = `你是移动端页面的版面设计师。你只做"版面设计 + 组件落位"决策，绝不写任何 HTML/CSS。工作分两步：先设计整页布局（这页该怎么组织、分几个区、谁主谁次），再据此把每个区落成组件块——是"设计版式"，不是"堆组件"。
 规则：
 - 只能使用下列已注册组件，不许发明新组件：
 ${catalog}
-- 你输出的是"选择题"：每块选 component + 必要的布局参数（cols/span/variant），并给 contentHints（2-5 条简短中文内容要点）。
+- 【第一步：先设计布局，再落组件】先在 layout 字段做版面设计：① 判定页面原型 archetype（见下条）；② 把这页拆成有序的内容分区 regions，每区写 role（区的角色，如 主视觉/核心内容/分类导航/数据概览/操作区）+ intent（这区要解决什么、放什么）；③ 用 rhythm 一句话说明主次与节奏。然后 blocks 必须逐一落在这些 region 内、实现该布局，每个 block 用 region 字段标注它属于哪个区。**严禁脱离 layout 直接拼组件**——blocks 是对 layout 的实现，不是另起炉灶。
+- 输出的每块是"选择题"：选 component + 布局参数（cols/span/variant）+ region + contentHints（2-5 条简短中文内容要点）。
 - 【contentHints 必须具体、贴该产品领域】后续会有一个小模型只看 contentHints 来填内容，所以要点必须写"实打实的文案方向"，让它有据可依：先判断这是什么产品（看产品名+设计意图），再写出该领域**真实的栏目名、具体条目主题、真实的指标/标签字样**。例如新闻类不要写"放几条新闻"，要写"放 4 条今日要闻：含一条时政、一条财经、一条体育，每条带来源与发布时间"；电商类不要写"商品列表"，要写"4 张商品卡：标明品名（如某品牌耳机）、价格区间、销量/评分标签"。给出数量、条目主题、每条包含的字段，但不要写死具体 props 值。
 - 严禁泛泛而谈或占位式要点（如"几条内容""一些卡片""示例标题"），也禁止跟产品无关的话题。
 - 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
@@ -2063,13 +2064,21 @@ ${catalog}
 设计系统 globalStyle：${styleStr}
 本页：${page ? JSON.stringify(page) : '（首页）'}
 
-只返回如下结构 JSON：
+先设计 layout，再让 blocks 实现它。只返回如下结构 JSON：
 {
   "pageId": "${page?.id || 'home'}",
   "title": "页面中文标题",
-  "layout": { "type": "scroll", "gap": "md" },
+  "layout": {
+    "archetype": "页面原型，如 settings-list / profile / feed / detail / dashboard / product-list / flow / home-discover",
+    "type": "scroll",
+    "gap": "md",
+    "regions": [
+      { "id": "kebab-区id", "role": "区角色(主视觉/核心内容/分类导航/数据概览/操作区…)", "intent": "这区解决什么、放什么" }
+    ],
+    "rhythm": "一句话说明主次与浏览节奏"
+  },
   "blocks": [
-    { "id": "kebab-唯一", "component": "组件名", "order": 1, "span": "full", "cols": 2, "variant": "可选", "contentHints": ["要点1","要点2"] }
+    { "id": "kebab-唯一", "region": "所属区id", "component": "组件名", "order": 1, "span": "full", "cols": 2, "variant": "可选", "contentHints": ["要点1","要点2"] }
   ]
 }`
     return { systemPrompt, userPrompt, imageUrls: [] }
