@@ -2058,13 +2058,26 @@ ${catalog}
   设置就该像设置、列表就该像列表——形态对了才允许在其内部追求变体丰富。
 - 【主动变换 variant，避免单调】凡是带"可选变体"的组件，都要为它选一个最贴合该内容的 variant 填进块的 "variant" 字段；并且同一页里尽量让相邻/同类块用不同变体（比如这页 CardGrid 用 cover、列表用 card、数据用 bar），让整页有节奏、不要每块都长一样。根据内容语义选：入口/专题→cover 或 icon-tile，书影音/海报封面→cover-tall，作者/用户/人物→avatar，新闻流→card 或 thumb-right，排行榜/热度榜→ListFeed 的 rank，带封面的长内容→ListFeed 的 cover，对比数据→bar，占比/完成度→ring，关键指标+涨跌→trend，档案→striped/cards，历程→cards，沉浸主视觉→Banner 的 overlay 或 split。商品/课程/付费内容→ProductCard，"我的"/设置/账户菜单→CellGroup，个人主页顶部→ProfileHeader，流程/引导/订单状态→Steps，目标/任务/技能完成度→Progress，用户评价/评论→ReviewList。
 - 严格只返回一个 JSON 对象，无任何解释/thought/markdown。`
+    const pgTitle = page?.title || page?.id || ''
+    const pgNav = page?.navKey ? `底栏主页（navKey=${page.navKey}）` : '子页/详情页（无底栏）'
+    const pgPurpose = page?.purpose || ''
+    const pgFns = Array.isArray(page?.functions) ? page.functions.join('；') : (page?.functions || '')
+    const pgKey = Array.isArray(page?.keyContent) ? page.keyContent.join('；') : (page?.keyContent || '')
+    const pgSections = (Array.isArray(page?.sections) ? page.sections : [])
+      .map(s => s && (s.component || s.slug || s.title)).filter(Boolean).join('、')
+    const pageBlock = page ? `【本页信息——务必先据此判定原型与布局，再落组件】
+- 页面：${pgTitle}（${pgNav}）
+- 功能/目的：${pgPurpose || '（未给出，按标题与产品推断）'}
+- 能做什么：${pgFns || '（无）'}
+- 关键内容：${pgKey || '（无）'}${pgSections ? `\n- 规格建议区块（参考，可按布局调整/增删）：${pgSections}` : ''}` : '本页：首页'
     const userPrompt = `产品名：${appName || ''}
 设计意图：${designIntent || ''}
 目标平台：${pf.label}
 设计系统 globalStyle：${styleStr}
-本页：${page ? JSON.stringify(page) : '（首页）'}
 
-先设计 layout，再让 blocks 实现它。只返回如下结构 JSON：
+${pageBlock}
+
+先读上面【本页信息】判断这页的功能与原型，再设计 layout，最后让 blocks 实现它。只返回如下结构 JSON：
 {
   "pageId": "${page?.id || 'home'}",
   "title": "页面中文标题",
