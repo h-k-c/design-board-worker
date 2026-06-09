@@ -815,7 +815,7 @@ async function handleAI(req, env, userId) {
     ollamaUrl,
     // Reference-driven page generation fields
     target = '',
-    platform = 'app',
+    platform = 'miniprogram',
     maxPages = 5,
     referenceMode = 'strict',
     generationScope = 'core',
