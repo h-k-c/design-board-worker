@@ -855,24 +855,25 @@ async function handleAI(req, env, userId) {
       label: 'App 移动端（iOS/Android 原生风格）',
       rules: '画布按移动端竖屏设计，固定设计视口 390px 宽；根容器 width:100%、min-height:100vh，铺满当前视口；不要再写更小的 max-width 居中壳；触控友好（点击区 ≥44px）；底部 tabbar / 顶部 navbar 按需要；不要桌面多列布局。',
     }
-    if (p === 'miniprogram') return {
-      label: '微信小程序',
-      rules: '画布按微信小程序设计，固定设计视口 375px 宽；根容器 width:100%、min-height:100vh，铺满当前视口；不要再写更小的 max-width 居中壳；可表现小程序顶部导航语义，但不要画手机边框/刘海/浏览器外壳；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
-    }
-    return {
+    if (p === 'web') return {
       label: 'Web 网页（桌面优先，响应式）',
       rules: '桌面优先并响应式；内容容器 max-width 960–1200px 居中；可用多列/栅格布局；适配窄屏断点。',
+    }
+    // 默认（含空串/未知/未选）= 微信小程序，绝不默认 web。
+    return {
+      label: '微信小程序',
+      rules: '画布按微信小程序设计，固定设计视口 375px 宽；根容器 width:100%、min-height:100vh，铺满当前视口；不要再写更小的 max-width 居中壳；可表现小程序顶部导航语义，但不要画手机边框/刘海/浏览器外壳；卡片化、圆角、留白克制；触控友好；不要桌面多列布局、不要浏览器地址栏式元素。',
     }
   }
   const pf = platformSpec(platform)
   // Platform-derived viewport. The explicit `platform` is authoritative — only
   // honour uiContract.viewport when it matches (avoids a stale 'web' viewport
   // baked into an old contract overriding a freshly-picked App/小程序 platform).
-  const platformViewport = platform === 'miniprogram'
-    ? { platform, width: 375, height: 812 }
-    : platform === 'app'
-      ? { platform, width: 390, height: 844 }
-      : { platform: 'web', width: 1280, height: 720 }
+  const platformViewport = platform === 'app'
+    ? { platform, width: 390, height: 844 }
+    : platform === 'web'
+      ? { platform: 'web', width: 1280, height: 720 }
+      : { platform: 'miniprogram', width: 375, height: 812 }
   const viewport = (uiContract?.viewport && uiContract.viewport.platform === platform)
     ? uiContract.viewport
     : platformViewport
