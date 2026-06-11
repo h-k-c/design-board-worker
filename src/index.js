@@ -137,6 +137,14 @@ async function getAssetById(env, id) {
   }
 }
 
+async function softDeleteAsset(env, id, userId) {
+  if (!env.DB || !id) return false
+  const res = await env.DB.prepare(
+    "UPDATE assets SET deleted_at = datetime('now') WHERE id = ? AND user_id = ?"
+  ).bind(id, userId).run()
+  return !!res?.meta?.changes
+}
+
 async function r2ObjectToDataUrl(object) {
   if (!object) return ''
   const bytes = new Uint8Array(await object.arrayBuffer())
@@ -762,6 +770,11 @@ async function handleGetAsset(req, env, id) {
       ...CORS,
     }
   })
+}
+
+async function handleDeleteAsset(req, env, id, userId) {
+  const ok = await softDeleteAsset(env, id, userId)
+  return json({ ok })
 }
 
 // Resolve Worker image URLs to data URLs so external APIs can access them
@@ -2568,6 +2581,9 @@ async function handleRequest(req, env) {
     if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env, userId)
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
+    if ((m = path.match(/^\/api\/assets\/([^/]+)$/)) && req.method === 'DELETE') {
+      return handleDeleteAsset(req, env, m[1], userId)
+    }
     if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env, userId)
     if (path === '/api/logs' && req.method === 'POST') return handleLogAi(req, env, userId)
