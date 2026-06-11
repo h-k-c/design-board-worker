@@ -2588,6 +2588,7 @@ async function handleRequest(req, env) {
     const user = await authMiddleware(req, env)
     if (!user) return json({ error: '未授权，请重新登录' }, 401)
     const userId = user.sub
+    let m
 
     if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env, userId)
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
@@ -2605,7 +2606,6 @@ async function handleRequest(req, env) {
     if (path === '/api/generated/pages' && req.method === 'POST') return handleCreatePage(req, env, userId)
     if (path === '/api/generated/versions' && req.method === 'POST') return handleCreateVersion(req, env, userId)
 
-    let m
     if ((m = path.match(/^\/api\/generated\/versions\/([^/]+)\/content$/)) && req.method === 'GET') {
       return handleGetVersionContent(req, env, m[1], userId)
     }
