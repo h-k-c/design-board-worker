@@ -1287,7 +1287,8 @@ ${context || '（无）'}
 - 页面数量必须在 1-${effectivePageLimit} 个之间，${planScope === 'single' ? '只能输出 1 个页面。' : `**优先用满到 ${effectivePageLimit} 个**；不要为了精简而砍掉有价值的子页面/详情页。`}
 - appName / designIntent 用简洁中文概括产品与设计意图。
 - **globalStyle 是这个 app 唯一的、完整的结构化设计系统**，后续每个页面都只靠它来落地视觉（不会再读原始 DNA 长文），所以你必须把设计 DNA / 大爆炸因子里的**全部可落地数值都搬进来、一个不漏**：
-  - palette：4-6 条，每条形如 "#C8102E 主色/强调" 这样"十六进制 + 中文角色"，覆盖主色/辅助/中性/背景/强调。
+  - palette：5-7 条，每条形如 "#C8102E 主色/强调" 这样"十六进制 + 中文角色"，覆盖主色 primary、辅助色 secondary、第三强调 tertiary、accent、正文/中性、背景/表面；来自多张素材的不同色相要分角色保留，禁止把所有颜色合并成一个粉/红/蓝主色。
+  - 色彩用法要写进 componentRules/signature：primary 只给主 CTA/激活态/核心标题；secondary 给分类 chip/筛选/图标淡底；tertiary/accent 给角标、计数、进度、价格/风险/新内容等小面积强调；中性色和背景只做承托。页面必须能看见至少 3 个色彩家族，但比例要克制。
   - typography：字体族 + 各级字号字重，如 "标题 Plus Jakarta 700 22px / 正文 Inter 400 15px/1.6 / 标签 13px 500"。
   - radius：圆角体系，如 "卡片 16、按钮 12、标签 999"。
   - shadow：完整 box-shadow 配方，如 "0 8px 24px rgba(0,0,0,.08)"。
@@ -1405,7 +1406,7 @@ ${sideLis}
       const chrome = buildSharedChrome(globalStyle, globalNav, page?.navKey)
       const chromeRule = [
         chrome.hexList
-          ? `## 强制统一配色（全 app 共享，直接用这些十六进制值）\n- 全 app 唯一的配色就是这几个值：${chrome.hexList}。**主色是 ${chrome.primary}**。\n- 用 Tailwind 任意值**直接写十六进制**：\`bg-[${chrome.primary}]\` \`text-[${chrome.primary}]\` \`border-[${chrome.primary}]\`，**不要用 var() 变量、不要自创其它色值**。\n- **本页正文必须大量、明显地用到主色 ${chrome.primary}**：区块标题/小标题、图标淡底圆角块（如 \`bg-[${chrome.primary}]/10 text-[${chrome.primary}]\`）、标签 chip、卡片选中/强调态、CTA 按钮都要带主色。**严禁做成"只有 banner/导航有色、正文全是白底黑线框"的半成品**——白底黑框卡片是不合格的。`
+          ? `## 强制统一配色（全 app 共享，直接用这些十六进制值）\n- 全 app 唯一的配色就是这几个值：${chrome.hexList}。**主色是 ${chrome.primary}**，但主色不是唯一强调色。\n- 用 Tailwind 任意值**直接写十六进制**：\`bg-[${chrome.primary}]\` \`text-[${chrome.primary}]\` \`border-[${chrome.primary}]\`，**不要用 var() 变量、不要自创其它色值**。\n- **本页必须按角色分配多色，而不是全页只用主色**：primary 用于主 CTA/当前激活态/最重要标题；palette 中的 secondary/tertiary/accent 用于分类 chip、图标淡底、角标、计数、进度、价格/风险/新内容等小面积强调。每页正文至少可见 primary + 一个辅助/强调色 + 中性/表面色。避免标题、图标、chip、按钮全部染成同一个粉/红/蓝。`
           : '',
         chrome.navHtml
           ? `## 强制共享导航（必须原样粘贴，全 app 逐字一致）\n- 本页必须包含下面这段导航区块 HTML，**原样粘贴，不要增删改导航项的文字/数量/顺序/图标**，只允许保留我已设好的当前页激活态：\n\`\`\`html\n${chrome.navHtml}\n\`\`\`\n- ${chrome.navType === 'bottom-tab' ? '它是固定底部栏，请给页面主内容底部留出 pb-20 的空间避免被遮挡。' : chrome.navType === 'top-nav' ? '它是顶部栏，放在页面最上方。' : '它是侧边栏，与主内容左右并排（外层用 flex）。'}`
@@ -1434,7 +1435,7 @@ ${chromeRule || ''}
 1. **统一令牌**：所有颜色/圆角/阴影/字号都来自 globalStyle 的具体值，用 Tailwind 任意值表达，全页一致，不要随手编新值。
 2. **间距用 8pt 体系**：4/8/12/16/24/32/48/64（对应 p-1/p-2/p-3/p-4/p-6/p-8/p-12/p-16）。同组元素间距一致，区块之间留白要慷慨、有呼吸感。
 3. **字阶有明确层级**：至少 4 级字号 + 字重对比（如 13/15/20/28，weight 400/500/700），正文行高 1.5–1.7，标题更紧。一屏内信息层级 ≥3 层。
-4. **品牌色必须贯穿每一页（关键，别做成白底黑线框）**：克制 ≠ 无色。主色（globalStyle 第一个色值）在**每一页正文**都要明显出现，不能只剩导航有色。至少落到以下几处：① 区块标题/小标题用主色或主色强调；② 图标统一用主色或主色 8–12% 淡底圆角块承托（如 \`bg-[主色]/10 text-[主色]\`，主色用十六进制写）；③ 卡片选中/激活态、标签 chip、CTA 按钮用主色实底或主色描边；④ 列表项左侧或卡片顶部可加主色细条/强调边。避免整页只有黑色描边卡片。中性灰阶只做背景与次要文字，不要喧宾夺主，也不要彩虹色。对比度达到 WCAG AA。
+4. **色彩必须有角色分工（关键，别做成单色皮肤）**：克制 ≠ 只用一个主色。主色（globalStyle 第一个色值）要出现在主 CTA/激活态/最重要标题，但不能包办所有强调；globalStyle 里的 secondary/tertiary/accent 必须落到分类 chip、图标淡底、角标、计数、进度、价格/风险/新内容等小面积位置。每页至少可见 3 个色彩家族：中性/表面色 + primary + secondary/tertiary/accent。比例约 60–70% 表面与正文、20–30% primary、10–15% 辅助/强调色。避免标题、图标、chip、按钮全部同色，也避免彩虹乱喷。对比度达到 WCAG AA。
 5. **一个视觉焦点**：首屏有明确主视觉/主操作，其余元素服从它，不要平铺堆砌。
 6. **组件细节**：圆角统一、阴影柔和有层次（避免生硬黑边）、边框用低对比分隔线、交互元素有 hover/active/focus 态。
 7. **真实内容**：所有文案、数字、列表项、标签都是贴合产品的具体中文内容。严禁 Lorem ipsum、"示例标题"、"暂无内容"、大面积灰色占位块。没有真实图片时用 CSS 渐变、内联 SVG 图标、纯 CSS 插画/数据可视化形状替代。
@@ -2036,16 +2037,16 @@ ${styleStr}
   // (big model) only picks components + layout + contentHints; the fill step
   // (small model) only outputs props JSON matching one component's schema.
   const COMPONENT_CATALOG = {
-    Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', vr: 'solid|gradient|minimal|aurora|split|overlay', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient|minimal|aurora|split|overlay", "accent": "primary" }（solid/gradient=图片打底+品牌色罩，minimal=浅底大字，aurora=深底柔光，split=左文右图卡片式，overlay=整图+底部文字沉浸式）' },
+    Banner:        { use: '页面顶部品牌横幅/主视觉', layout: 'span:full', vr: 'solid|gradient|minimal|aurora|split|overlay', props: '{ "title": str, "subtitle": str?, "carouselDots": 0-5?, "variant": "solid|gradient|minimal|aurora|split|overlay", "accent": "primary|accent2|accent3" }（solid/gradient=图片打底+品牌色罩，minimal=浅底大字，aurora=深底柔光，split=左文右图卡片式，overlay=整图+底部文字沉浸式）' },
     SectionHeader: { use: '区块小标题（带可选“更多”）', layout: '-', props: '{ "title": str, "moreLabel": str?, "icon": iconName? }（icon 可选：标题前的小图标）' },
     TagChips:      { use: '分类/筛选标签胶囊', layout: '-', vr: 'pill|underline|outline', props: '{ "variant": "pill|underline|outline", "items": [ { "label": str, "active": bool?, "icon": iconName? } ] }（2-8个；icon 可选，取自图标枚举）' },
-    CardGrid:      { use: '并列卡片网格（专题/分类入口/书影音/人物）', layout: 'cols:2|3', vr: 'icon-tile|plain|list|cover|cover-tall|avatar', props: '{ "title": str?, "variant": "icon-tile|plain|list|cover|cover-tall|avatar", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-8张；list=横向行，cover=顶部封面图，cover-tall=竖封面海报(书/影/专辑)，avatar=圆形头像(作者/用户)；badge 可选角标如“新”“热”）' },
+    CardGrid:      { use: '并列卡片网格（专题/分类入口/书影音/人物）', layout: 'cols:2|3', vr: 'icon-tile|plain|list|cover|cover-tall|avatar', props: '{ "title": str?, "variant": "icon-tile|plain|list|cover|cover-tall|avatar", "items": [ { "icon": iconName, "title": str, "desc": str?, "accent": "primary|accent2|accent3|neutral", "badge": str? } ] }（2-8张；list=横向行，cover=顶部封面图，cover-tall=竖封面海报(书/影/专辑)，avatar=圆形头像(作者/用户)；badge 可选角标如“新”“热”）' },
     ListFeed:      { use: '信息流/长内容列表/榜单', layout: 'span:full', vr: 'thumb|minimal|card|thumb-right|rank|cover', props: '{ "title": str?, "variant": "thumb|minimal|card|thumb-right|rank|cover", "items": [ { "icon": iconName?, "title": str, "desc": str?, "tag": str?, "meta": str?, "trailing": str? } ] }（2-12条；thumb=缩略图左，thumb-right=缩略图右，card=每条独立卡片，rank=带名次序号的排行榜，cover=每条顶部宽封面图；trailing 可选：行右侧数值/状态）' },
     SearchBar:     { use: '搜索框（可带最近搜索）', layout: 'span:full', props: '{ "placeholder": str, "recent": [str]? }' },
     DetailHeader:  { use: '详情页标题头', layout: 'span:full', props: '{ "title": str, "subtitle": str?, "meta": [str]?, "tags": [str]?, "icon": iconName? }（icon 可选：标题前图标）' },
     KeyValueList:  { use: '键值/档案信息表', layout: 'span:full', vr: 'default|striped|cards', props: '{ "title": str?, "variant": "default|striped|cards", "rows": [ { "key": str, "value": str, "icon": iconName? } ] }（striped=斑马纹，cards=每对成卡；每行 icon 可选）' },
     StatGrid:      { use: '数据指标网格（大数字+标签，用于概览/统计）', layout: 'cols:2|3', vr: 'default|plain|bar|ring|trend', props: '{ "title": str?, "variant": "default|plain|bar|ring|trend", "items": [ { "value": str, "unit": str?, "label": str, "icon": iconName?, "trend": str? } ] }（2-6个；plain=无卡格，bar=横向条，ring=环形进度(value最好是百分比数)，trend=大数+涨跌胶囊+迷你柱(配合trend字段)；trend 可选涨跌如“+12%”/“-3%”自动绿涨红跌；icon 可选）' },
-    MediaCard:     { use: '特性大图卡（顶部图片+标题描述，用于专题/功能推荐）', layout: 'span:full', vr: 'default|horizontal|overlay', props: '{ "title": str?, "variant": "default|horizontal|overlay", "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|neutral", "badge": str? } ] }（2-4张；default=顶部封面图，horizontal=左图右文，overlay=文字压在大图上沉浸式；badge 可选图区角标）' },
+    MediaCard:     { use: '特性大图卡（顶部图片+标题描述，用于专题/功能推荐）', layout: 'span:full', vr: 'default|horizontal|overlay', props: '{ "title": str?, "variant": "default|horizontal|overlay", "items": [ { "icon": iconName, "title": str, "desc": str?, "tag": str?, "accent": "primary|accent2|accent3|neutral", "badge": str? } ] }（2-4张；default=顶部封面图，horizontal=左图右文，overlay=文字压在大图上沉浸式；badge 可选图区角标）' },
     Timeline:      { use: '时间线（历程/进度/动态，按时间排列）', layout: 'span:full', vr: 'default|cards', props: '{ "title": str?, "variant": "default|cards", "items": [ { "time": str?, "title": str, "desc": str?, "icon": iconName?, "tag": str? } ] }（2-8条；cards=每条成卡；icon 可选：节点图标；tag 可选：标题旁小标记）' },
     NoticeBar:     { use: '公告条（单行通知/提示）', layout: 'span:full', props: '{ "text": str, "icon": iconName?, "tag": str? }' },
     ProductCard:   { use: '商品/课程/付费内容卡（图+名+价格+标签），电商/课程/会员场景', layout: 'cols:2', vr: 'grid|list', props: '{ "title": str?, "variant": "grid|list", "items": [ { "title": str, "desc": str?, "price": str?, "origPrice": str?, "tag": str?, "meta": str? } ] }（2-8件；grid=2列带图卡，list=横向行；price 带货币符如 ¥39，origPrice 原价(划线)，meta 如 月销2k/4.8分）' },
@@ -2069,7 +2070,7 @@ ${catalog}
 - 输出的每块是"选择题"：选 component + 布局参数（cols/span/variant）+ region + contentHints（2-5 条简短中文内容要点）。
 - 【contentHints 必须具体、贴该产品领域】后续会有一个小模型只看 contentHints 来填内容，所以要点必须写"实打实的文案方向"，让它有据可依：先判断这是什么产品（看产品名+设计意图），再写出该领域**真实的栏目名、具体条目主题、真实的指标/标签字样**。例如新闻类不要写"放几条新闻"，要写"放 4 条今日要闻：含一条时政、一条财经、一条体育，每条带来源与发布时间"；电商类不要写"商品列表"，要写"4 张商品卡：标明品名（如某品牌耳机）、价格区间、销量/评分标签"。给出数量、条目主题、每条包含的字段，但不要写死具体 props 值。
 - 严禁泛泛而谈或占位式要点（如"几条内容""一些卡片""示例标题"），也禁止跟产品无关的话题。
-- 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/neutral）。
+- 不要写组件的具体 props、不要写样式、不要写颜色十六进制。颜色一律用枚举名（primary/accent2/accent3/neutral）。同页不同区块要轮换辅助色，避免所有 block 都默认 primary。
 - icon 名只能取：${ICON_NAMES}。
 - 一页 4-8 个块，主视觉靠前、次要靠后，符合移动端竖屏浏览节奏。
 - 【⚠️ 先符合页面原型，再谈丰富——别发散】先判断这页是什么"类型"，套用该类型的常规形态，不要为了花哨乱选组件。常见原型 → 主体组件：
@@ -2132,7 +2133,7 @@ ${pageBlock}
     const systemPrompt = `你为单个 UI 组件产出"渲染数据 props"，是结构化 JSON，不是代码。绝不写 HTML/CSS。
 规则：
 - 严格符合给定 props schema 的字段；多余字段不要，缺的用合理中文内容补齐。
-- 颜色只用枚举名 primary/accent2/neutral，不写十六进制。尺寸/变体只用 schema 列出的枚举。
+- 颜色只用枚举名 primary/accent2/accent3/neutral，不写十六进制。尺寸/变体只用 schema 列出的枚举；列表/网格的多条 item 尽量在 primary/accent2/accent3 之间轮换，不要全填 primary。
 - icon 名只能取：${ICON_NAMES}。
 - 【内容必须紧扣产品主题】所有文本必须围绕给定的产品名、设计意图与 contentHints 展开，是该产品所在真实领域里**具体、可信、有信息量**的中文内容。先从产品名+设计意图判断这是什么领域（如外卖/健身/理财/招聘/在线课程/民宿预订…），再据此推断该组件该放什么真实内容。
 - 【严禁占位与无关内容】绝对禁止任何占位符、示例数据、通用默认或与产品主题无关的内容：禁止出现 zhangsan、lisi、John Doe、Jane、Lorem ipsum、张三、李四、王五、赵六、王二麻子、"示例标题/示例内容/测试/占位/标题1/卡片1/选项A"，也禁止跟产品无关的随机学科或话题（如理财产品里冒出"一次函数""学 Python""唐诗鉴赏"）。**更不要把 props schema 里的字段说明/示例词当成真实内容直接填**（如把"红点数字""未读数字""主标题""一句话描述"原样写进去）。人名一律用真实自然的中文姓名(如 林岚、周屿、苏晓桐 这类，彼此各异不重复)，品牌名、商品名、栏目名、数字指标都要换成该领域里说得通的真实具体写法。
@@ -2148,7 +2149,7 @@ ${pageBlock}
       const editSystem = `你在对一个已有 UI 组件做"定向编辑"。你会收到该组件当前的 props（结构化 JSON）和一条用户修改指令。你的任务：理解指令意图，在当前 props 基础上做**最小必要的改动**，输出修改后的完整 props JSON。
 规则：
 - 这是"改"不是"重做"：以当前 props 为基底，只动与指令相关的字段，其余字段一律原样保留（包括已有的真实文案、数字、icon）。
-- 严格符合该组件的 props schema：字段名、枚举值（颜色只用 primary/accent2/neutral；尺寸/变体只用 schema 列出的枚举；icon 只能取：${ICON_NAMES}）。
+- 严格符合该组件的 props schema：字段名、枚举值（颜色只用 primary/accent2/accent3/neutral；尺寸/变体只用 schema 列出的枚举；icon 只能取：${ICON_NAMES}）。
 - 认真领会指令的真实意图再改。例如"增强标题层级"=放大/加粗标题或调整其 size/weight 枚举；"减弱边框"=调 border/卡片样式枚举往更轻；"换个图标"=改 icon 名；"文案更专业"=改写对应文本但保持同领域同主题。
 - 若指令要求的改动该 schema 根本不支持（如该组件没有"隐藏文字只留图标"的字段），则在 schema 允许范围内做最接近的合理调整，不要凭空加字段。
 - 不要把已有真实内容替换成占位/示例/空白，也不要跑题到与产品无关的话题。
@@ -2176,7 +2177,7 @@ ${curProps || '（无，按 schema 合理生成）'}
 组件：${comp}
 用途：${def ? def.use : ''}
 props schema：${def ? def.props : '{}'}
-配色板（供你理解 primary 等枚举对应的真实色，但你输出仍用枚举名）：${palette}
+配色板（供你理解 primary/accent2/accent3 等枚举对应的真实色，但你输出仍用枚举名）：${palette}
 内容要点 contentHints：${hints || '（无：请严格按产品名+设计意图所属领域 + 本组件用途，填充该领域真实具体的中文内容，绝不要用占位/示例/无关话题）'}
 
 请确保每条文案都能直接放进这个真实产品里、并紧扣"产品名+设计意图+所属页面"的主题，读起来像该领域的真实数据。只返回符合该 schema 的 props JSON 对象。`
