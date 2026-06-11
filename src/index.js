@@ -1822,7 +1822,13 @@ ${persona || '（未设定，按内容自行揣摩气质）'}
 ${chromeRule ? '\n' + chromeRule + '\n' : ''}
 ## 用 Tailwind 语义类（铁律）
 1. **颜色只准用上面列出的具名角色**：\`bg-surface\`、\`text-on-primary-container\`、\`border-outline-variant\` 等。**禁止裸 hex、禁止 var()、禁止 bg-[#xxx]**。
-2. **主色 primary / on-primary / primary-container 必须贯穿正文每一页**：标题强调、图标淡底圆角块、标签 chip、CTA 按钮都要带主色。**严禁白底黑线框半成品**。
+2. **颜色必须按语义分工，不允许整页只用 primary 一个色系**：
+   - primary / on-primary / primary-container：只用于主 CTA、当前激活态、最重要的标题强调。
+   - secondary / secondary-container：用于分类 chip、筛选、次级按钮、图标淡底块。
+   - tertiary / tertiary-container / dna-accent-*：用于角标、计数、进度、价格/风险/新内容等小面积强调。
+   - surface / surface-container / outline：用于页面背景、卡片、分隔线和输入区。
+   - 每个页面至少要可见 3 个色彩家族：中性/表面色 + primary + secondary/tertiary/accent。比例大致为 60–70% 表面与正文、20–30% primary、10–15% secondary/tertiary/accent。不要把标题、图标、chip、按钮全部染成同一个粉色/红色。
+   - **严禁白底黑线框半成品**，但也严禁“全页面一个品牌色”。
 3. 字体：\`font-headline\` / \`font-body\` / \`font-label\`。
 4. 图标：Material Symbols 字体。
 5. 圆角用 Tailwind 标准档位映射（${rn}px→rounded-lg 等），间距用上面刻度。
@@ -1991,7 +1997,9 @@ ${blockCss || ''}
 要求：
 - 只提炼核心 token，严格输出下面这个 JSON 对象结构，不要多余字段、不要嵌套展开：
 { "appName": "", "palette": [{"name":"","role":"","hex":""}], "fonts": {"headline":"","body":"","label":""}, "radius": 12, "shadow": "", "accentText": "" }
-- palette：3-6 个基础色（不是色阶渐变），每个含 name（如 Primary/Secondary/Neutral）、role（如 primary/secondary/neutral/accent/background）、hex（标准 #RRGGBB）。优先**直接复用** DNA 文本里出现的具体十六进制色值；色值不足时再合理推断补齐，但总数保持 3-6 个。
+- palette：5-7 个基础色（不是色阶渐变），每个含 name（如 Primary/Secondary/Tertiary/Neutral/Text/Surface）、role（只能是 primary/secondary/tertiary/accent/neutral/text/background/surface 之一）、hex（标准 #RRGGBB）。
+- palette 必须覆盖：主色 primary、至少 1 个 secondary 或 tertiary、至少 1 个 accent、正文/深色 text 或 neutral、背景/浅色 background 或 surface。不要把相近红/粉全部合并成一个色；如果 DNA/图片里有低饱和背景、深色文字、暖色点缀、冷色点缀，都要各自保留为独立基础色。
+- 优先**直接复用** DNA 文本里出现的具体十六进制色值；色值不足时再合理推断补齐，但总数保持 5-7 个。
 - fonts：headline / body / label 三个字段，给出合理的字体族名（family name，如 "Plus Jakarta Sans"、"Inter"）；DNA 中出现就复用，缺失则按整体气质推断。
 - radius：基础圆角，px 数值（number，不带单位）。
 - shadow：一条合法的 CSS box-shadow 值字符串（如 "0 8px 24px rgba(0,0,0,0.08)"）。
@@ -2016,7 +2024,7 @@ ${styleStr}
 }
 
 约束：
-- palette 含 3-6 个基础色，优先复用 DNA 中出现的具体十六进制色值。
+- palette 含 5-7 个基础色，必须覆盖 primary、secondary/tertiary、accent、text/neutral、background/surface，优先复用 DNA 中出现的具体十六进制色值。
 - radius 为 px 数值（number）。
 - shadow 为合法 CSS box-shadow 字符串。
 - 只返回 JSON 对象本身，不要代码块、不要解释。`
