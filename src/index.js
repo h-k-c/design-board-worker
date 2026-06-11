@@ -463,19 +463,22 @@ async function handleGetVersionContent(req, env, id, userId) {
     ).bind(id, userId).first()
     if (!row) return json({ error: 'Version not found' }, 404)
 
-    async function readKey(key) {
-      if (!key) return ''
+    async function readKey(key, required = false) {
+      if (!key) return { text: '', missing: required }
       const object = await env.ASSETS.get(key)
-      if (!object) return ''
-      return await object.text()
+      if (!object) return { text: '', missing: required }
+      return { text: await object.text(), missing: false }
     }
 
-    const [html, css, js] = await Promise.all([
-      readKey(row.html_r2_key),
+    const [htmlPart, cssPart, jsPart] = await Promise.all([
+      readKey(row.html_r2_key, true),
       readKey(row.css_r2_key),
       readKey(row.js_r2_key),
     ])
-    return json({ html, css, js })
+    if (htmlPart.missing) {
+      return json({ error: 'Generated version content missing', versionId: id }, 404)
+    }
+    return json({ html: htmlPart.text, css: cssPart.text, js: jsPart.text })
   } catch (e) {
     return json({ error: e.message }, 500)
   }
