@@ -621,6 +621,7 @@ async function handleGetBoard(req, env, userId) {
     const transform = state ? JSON.parse(state.transform) : { x: 0, y: 0, scale: 1 }
     const settings = await loadJsonSetting(env, userId, 'provider_settings')
     const uiSettings = await loadJsonSetting(env, userId, 'ui_settings')
+    const screenshots = await loadJsonSetting(env, userId, 'screenshots') || []
 
     const mapped = cards.results.map(row => {
       const content = JSON.parse(row.content)
@@ -629,14 +630,14 @@ async function handleGetBoard(req, env, userId) {
       return card
     })
 
-    return json({ cards: mapped, transform, settings, uiSettings })
+    return json({ cards: mapped, transform, settings, uiSettings, screenshots })
   } catch (e) {
     return json({ cards: [], transform: { x: 0, y: 0, scale: 1 } })
   }
 }
 
 async function handleSaveBoard(req, env, userId) {
-  const { cards, transform, settings, uiSettings } = await req.json()
+  const { cards, transform, settings, uiSettings, screenshots } = await req.json()
 
   try {
     // Per-user board_state: update the user's row, insert it if absent.
@@ -649,6 +650,7 @@ async function handleSaveBoard(req, env, userId) {
     const existingSettings = await loadJsonSetting(env, userId, 'provider_settings')
     await saveJsonSetting(env, userId, 'provider_settings', mergeProviderSettings(existingSettings, settings))
     await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
+    if (screenshots) await saveJsonSetting(env, userId, 'screenshots', screenshots)
 
     const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
     const existingIds = new Set(existing.results.map(r => r.id))
