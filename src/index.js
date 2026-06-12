@@ -344,6 +344,21 @@ async function syncAssetReferences(cards, env, userId) {
   }
 }
 
+async function syncAssetReferencesFromDb(env, userId) {
+  if (!env.DB) return
+  let rows
+  try {
+    rows = await env.DB.prepare('SELECT content FROM cards WHERE user_id = ?').bind(userId).all()
+  } catch {
+    return
+  }
+  const cards = []
+  for (const row of rows.results || []) {
+    try { cards.push(JSON.parse(row.content)) } catch {}
+  }
+  await syncAssetReferences(cards, env, userId)
+}
+
 async function cleanupAssets(env, opts = {}) {
   if (!env.DB || !env.ASSETS) return { ok: false, error: 'Asset storage is not configured' }
 
@@ -670,9 +685,10 @@ async function handleGetBoard(req, env, userId) {
 }
 
 async function handleSaveBoard(req, env, userId) {
-  const { cards, transform, settings, uiSettings, screenshots, screenshotPack } = await req.json()
+  const { cards, deletedCardIds, fullSync, transform, settings, uiSettings, screenshots, screenshotPack } = await req.json()
   const hasCardsPayload = Array.isArray(cards)
   const incomingCards = hasCardsPayload ? cards : []
+  const idsToDelete = Array.isArray(deletedCardIds) ? deletedCardIds.filter(Boolean) : []
 
   try {
     // Per-user board_state: update the user's row, insert it if absent.
@@ -693,15 +709,22 @@ async function handleSaveBoard(req, env, userId) {
     if (screenshots) await saveJsonSetting(env, userId, 'screenshots', screenshots)
     if (screenshotPack) await saveJsonSetting(env, userId, 'screenshot_pack', screenshotPack)
 
-    if (hasCardsPayload) {
-      const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
-      const existingIds = new Set(existing.results.map(r => r.id))
-      const incomingIds = new Set(incomingCards.map(c => c.id))
+    for (const id of idsToDelete) {
+      await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
+      await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
+    }
 
-      for (const id of existingIds) {
-        if (!incomingIds.has(id)) {
-          await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
-          await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
+    if (hasCardsPayload) {
+      if (fullSync) {
+        const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
+        const existingIds = new Set(existing.results.map(r => r.id))
+        const incomingIds = new Set(incomingCards.map(c => c.id))
+
+        for (const id of existingIds) {
+          if (!incomingIds.has(id)) {
+            await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
+            await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
+          }
         }
       }
 
@@ -731,8 +754,11 @@ async function handleSaveBoard(req, env, userId) {
         ).bind(id, type, nx, ny, nw, nh, content, linkedTo || null, userId).run()
       }
 
+    }
+
+    if (hasCardsPayload || idsToDelete.length) {
       try {
-        await syncAssetReferences(incomingCards, env, userId)
+        await syncAssetReferencesFromDb(env, userId)
       } catch (e) {
         console.log('[board-save] asset reference sync failed', e?.message || e)
       }
