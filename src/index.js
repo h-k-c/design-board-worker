@@ -246,7 +246,9 @@ async function handleGetLogs(req, env, userId) {
 function mergeProviderSettings(existing = {}, incoming = {}) {
   const current = existing && typeof existing === 'object' ? existing : {}
   const next = incoming && typeof incoming === 'object' ? incoming : {}
-  const provider = next.provider || current.provider || 'modelscope'
+  const hasKeys = (o) => o && typeof o === 'object' && Object.keys(o).length > 0
+  const nonEmptyStr = (v) => typeof v === 'string' && v.trim()
+  const provider = nonEmptyStr(next.provider) ? next.provider : (current.provider || 'modelscope')
   const apiKeys = {
     ...(current.apiKeys && typeof current.apiKeys === 'object' ? current.apiKeys : {}),
   }
@@ -257,22 +259,30 @@ function mergeProviderSettings(existing = {}, incoming = {}) {
   const activeKey = typeof next.apiKey === 'string' ? next.apiKey.trim() : next.apiKey
   if (activeKey) apiKeys[provider] = activeKey
 
-  // Dedicated fill-model role (self-contained url+key+model). Take incoming when
-  // provided, else keep existing — never let an absent field wipe it.
-  const fillModel = (next.fillModel && typeof next.fillModel === 'object')
-    ? next.fillModel
-    : (current.fillModel && typeof current.fillModel === 'object' ? current.fillModel : undefined)
-  const visionModel = (next.visionModel && typeof next.visionModel === 'object')
-    ? next.visionModel
-    : (current.visionModel && typeof current.visionModel === 'object' ? current.visionModel : undefined)
+  const keepObj = (key) => hasKeys(next[key]) ? next[key] : (current[key] ?? next[key])
+  const keepStr = (key) => nonEmptyStr(next[key]) ? next[key] : (current[key] ?? next[key])
+  const mergeRole = (key) => {
+    const oldRole = current[key] && typeof current[key] === 'object' ? current[key] : {}
+    const newRole = next[key] && typeof next[key] === 'object' ? next[key] : {}
+    if (!hasKeys(oldRole) && !hasKeys(newRole)) return undefined
+    return {
+      ...oldRole,
+      ...newRole,
+      provider: nonEmptyStr(newRole.provider) ? newRole.provider : (oldRole.provider || ''),
+      apiKey: nonEmptyStr(newRole.apiKey) ? newRole.apiKey : (oldRole.apiKey || ''),
+      baseUrl: nonEmptyStr(newRole.baseUrl) ? newRole.baseUrl : (oldRole.baseUrl || ''),
+      model: nonEmptyStr(newRole.model) ? newRole.model : (oldRole.model || ''),
+      baseUrlOptions: hasKeys(newRole.baseUrlOptions) ? newRole.baseUrlOptions : (oldRole.baseUrlOptions || {}),
+      modelOptions: hasKeys(newRole.modelOptions) ? newRole.modelOptions : (oldRole.modelOptions || {}),
+    }
+  }
 
   // Guard against an un-hydrated client wiping configured lists/models: an EMPTY
   // incoming object/string must NOT overwrite an existing non-empty DB value.
   // (This caused the user's model dropdown to vanish when settings were saved
   // before they had been hydrated from the server.)
-  const hasKeys = (o) => o && typeof o === 'object' && Object.keys(o).length > 0
-  const keepObj = (key) => hasKeys(next[key]) ? next[key] : (current[key] ?? next[key])
-  const keepStr = (key) => (typeof next[key] === 'string' && next[key].trim()) ? next[key] : (current[key] ?? next[key])
+  const fillModel = mergeRole('fillModel')
+  const visionModel = mergeRole('visionModel')
 
   return {
     ...current,
