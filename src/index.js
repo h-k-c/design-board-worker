@@ -2385,8 +2385,8 @@ ${gs}
       // Reasoning/"thinking" control. There is no global frontend switch because
       // each provider exposes a different knob, and unknown params 400 on some
       // endpoints. Enable it where supported and strip unsupported params below.
-      if (provider === 'qwen' || provider === 'modelscope') {
-        body.enable_thinking = !!enableReasoning
+      if ((provider === 'qwen' || provider === 'modelscope') && enableReasoning) {
+        body.enable_thinking = true
       } else if (provider === 'deepseek') {
         // DeepSeek's OpenAI-compatible API accepts reasoning_effort; 'none' skips thinking.
         body.reasoning_effort = enableReasoning ? 'high' : 'none'
@@ -2402,7 +2402,8 @@ ${gs}
       // Local OpenAI-compatible servers (LM Studio / Ollama) often reject
       // response_format (esp. for VL models) → 400. Never send it to them.
       const localEndpoint = provider === 'lmstudio' || provider === 'ollama' || useVision || useFill
-      if (wantsJson && !localEndpoint && (provider === 'google' || !needsStableJson)) {
+      const jsonObjectModes = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens', 'spec-draft', 'spec-extract', 'component-fill']
+      if (wantsJson && jsonObjectModes.includes(mode) && !localEndpoint && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
       if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
@@ -2427,12 +2428,14 @@ ${gs}
         })
         res = await makeRequest()
         // Strip params the endpoint rejects, then retry once. Covers local
-        // servers (LM Studio) that 400 on response_format / reasoning_effort.
-        if (!res.ok && (body.reasoning_effort || body.response_format)) {
+        // servers and Qwen-compatible endpoints that 400 on response_format /
+        // reasoning_effort / enable_thinking / thinking_budget.
+        if (!res.ok && (body.reasoning_effort || body.response_format || body.enable_thinking)) {
           const clone = await res.clone().text().catch(() => '')
-          if (/reasoning_effort|response_format|unsupported|unknown|unrecognized|extra|invalid|not support/i.test(clone)) {
+          if (/reasoning_effort|response_format|enable_thinking|thinking_budget|unsupported|unknown|unrecognized|extra|invalid|not support/i.test(clone)) {
             delete body.reasoning_effort
             delete body.response_format
+            delete body.enable_thinking
             res = await makeRequest()
           }
         }
@@ -2475,7 +2478,12 @@ ${gs}
           if (payload === '[DONE]') continue
           try {
             const chunk = JSON.parse(payload)
-            const delta = chunk.choices?.[0]?.delta?.content
+            const choice = chunk.choices?.[0] || {}
+            const delta = choice.delta?.content
+              ?? choice.message?.content
+              ?? choice.text
+              ?? chunk.output_text
+              ?? chunk.text
             if (delta) {
               if (!firstDeltaAt) {
                 firstDeltaAt = Date.now()
