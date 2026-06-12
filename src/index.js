@@ -16,6 +16,19 @@ function json(data, status = 200) {
   })
 }
 
+function withCors(response) {
+  if (!(response instanceof Response)) return response
+  const headers = new Headers(response.headers)
+  for (const [key, value] of Object.entries(CORS)) {
+    if (!headers.has(key)) headers.set(key, value)
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
 function sanitizeModelText(text) {
   return String(text || '')
     .replace(/<think>[\s\S]*?<\/think>/gi, '')
@@ -2554,12 +2567,12 @@ export default {
 
   async fetch(req, env) {
     try {
-      return await handleRequest(req, env)
+      return withCors(await handleRequest(req, env))
     } catch (e) {
       // Top-level safety net: any uncaught throw must still carry CORS headers,
       // otherwise the browser reports a misleading "No Access-Control-Allow-Origin"
       // error instead of the real failure.
-      return json({ error: '服务器内部错误：' + (e?.message || 'unknown') }, 500)
+      return withCors(json({ error: '服务器内部错误：' + (e?.message || 'unknown') }, 500))
     }
   },
 }
