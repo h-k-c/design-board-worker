@@ -2411,9 +2411,10 @@ ${gs}
       // Reasoning/"thinking" control. There is no global frontend switch because
       // each provider exposes a different knob, and unknown params 400 on some
       // endpoints. Enable it where supported and strip unsupported params below.
-      if ((provider === 'qwen' || provider === 'modelscope') && enableReasoning) {
+      const canSendReasoningParams = !useVision && !useFill
+      if (canSendReasoningParams && (provider === 'qwen' || provider === 'modelscope') && enableReasoning) {
         body.enable_thinking = true
-      } else if (provider === 'deepseek') {
+      } else if (canSendReasoningParams && provider === 'deepseek') {
         // DeepSeek's OpenAI-compatible API accepts reasoning_effort; 'none' skips thinking.
         body.reasoning_effort = enableReasoning ? 'high' : 'none'
       }
@@ -2432,7 +2433,7 @@ ${gs}
       if (wantsJson && jsonObjectModes.includes(mode) && !localEndpoint && (provider === 'google' || !needsStableJson)) {
         body.response_format = { type: 'json_object' }
       }
-      if (provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
+      if (canSendReasoningParams && provider === 'google' && !enableReasoning && ['page-plan', 'page-generate', 'page-edit', 'page-block-edit', 'design-tokens'].includes(mode)) {
         body.reasoning_effort = /gemini-2\.5/i.test(String(modelName || '')) ? 'none' : 'minimal'
       }
       const timeoutMs = (mode === 'page-generate' || mode === 'screen-generate' || mode === 'page-edit' || mode === 'page-block-edit') ? 280000
