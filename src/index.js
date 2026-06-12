@@ -2464,7 +2464,18 @@ ${gs}
     // Slow page-generation modes stream the result straight back to the
     // browser. Keeping bytes flowing prevents the edge / client connection
     // from timing out on slow models (Gemma, DeepSeek under load, etc).
-    const streamToClient = ['page-plan', 'page-generate', 'page-edit', 'page-block-edit'].includes(mode)
+    const streamToClient = [
+      'page-plan',
+      'page-generate',
+      'page-edit',
+      'page-block-edit',
+      'design-explosion',
+      'text-explosion',
+      'video-explosion',
+      'group',
+      'polish',
+      'design-tokens',
+    ].includes(mode)
     if (provider !== 'ollama' && streamToClient) {
       const ep = resolveEndpoint()
       if (!ep) return json({ error: 'Unsupported AI provider' }, 400)
