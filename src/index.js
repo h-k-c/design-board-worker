@@ -677,14 +677,19 @@ async function handleSaveBoard(req, env, userId) {
 
   try {
     // Per-user board_state: update the user's row, insert it if absent.
-    const upd = await env.DB.prepare('UPDATE board_state SET transform = ? WHERE user_id = ?')
-      .bind(JSON.stringify(transform), userId).run()
-    if (!upd.meta?.changes) {
-      await env.DB.prepare('INSERT INTO board_state (user_id, transform) VALUES (?, ?)')
-        .bind(userId, JSON.stringify(transform)).run()
+    if (transform !== undefined) {
+      const savedTransform = JSON.stringify(transform || { x: 0, y: 0, scale: 1 })
+      const upd = await env.DB.prepare('UPDATE board_state SET transform = ? WHERE user_id = ?')
+        .bind(savedTransform, userId).run()
+      if (!upd.meta?.changes) {
+        await env.DB.prepare('INSERT INTO board_state (user_id, transform) VALUES (?, ?)')
+          .bind(userId, savedTransform).run()
+      }
     }
-    const existingSettings = await loadJsonSetting(env, userId, 'provider_settings')
-    await saveJsonSetting(env, userId, 'provider_settings', mergeProviderSettings(existingSettings, settings))
+    if (settings !== undefined) {
+      const existingSettings = await loadJsonSetting(env, userId, 'provider_settings')
+      await saveJsonSetting(env, userId, 'provider_settings', mergeProviderSettings(existingSettings, settings))
+    }
     await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
     if (screenshots) await saveJsonSetting(env, userId, 'screenshots', screenshots)
 
@@ -701,21 +706,30 @@ async function handleSaveBoard(req, env, userId) {
       }
 
       for (const card of incomingCards) {
+        if (!card || typeof card !== 'object' || !card.id || !card.type) continue
         const { id, type, x, y, w, h, linkedTo, ...rest } = card
         const content = JSON.stringify(rest)
+        const nx = Number.isFinite(Number(x)) ? Number(x) : 0
+        const ny = Number.isFinite(Number(y)) ? Number(y) : 0
+        const nw = Number.isFinite(Number(w)) ? Number(w) : 240
+        const nh = Number.isFinite(Number(h)) ? Number(h) : 180
 
         if (existingIds.has(id)) {
           await env.DB.prepare(
             'UPDATE cards SET type=?, x=?, y=?, w=?, h=?, content=?, linked_to=?, updated_at=datetime(\'now\') WHERE id=? AND user_id=?'
-          ).bind(type, x, y, w, h, content, linkedTo || null, id, userId).run()
+          ).bind(type, nx, ny, nw, nh, content, linkedTo || null, id, userId).run()
         } else {
           await env.DB.prepare(
             'INSERT INTO cards (id, type, x, y, w, h, content, linked_to, user_id) VALUES (?,?,?,?,?,?,?,?,?)'
-          ).bind(id, type, x, y, w, h, content, linkedTo || null, userId).run()
+          ).bind(id, type, nx, ny, nw, nh, content, linkedTo || null, userId).run()
         }
       }
 
-      await syncAssetReferences(incomingCards, env, userId)
+      try {
+        await syncAssetReferences(incomingCards, env, userId)
+      } catch (e) {
+        console.log('[board-save] asset reference sync failed', e?.message || e)
+      }
     }
 
     return json({ ok: true })
