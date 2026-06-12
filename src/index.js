@@ -672,6 +672,8 @@ async function handleGetBoard(req, env, userId) {
 
 async function handleSaveBoard(req, env, userId) {
   const { cards, transform, settings, uiSettings, screenshots } = await req.json()
+  const hasCardsPayload = Array.isArray(cards)
+  const incomingCards = hasCardsPayload ? cards : []
 
   try {
     // Per-user board_state: update the user's row, insert it if absent.
@@ -686,34 +688,53 @@ async function handleSaveBoard(req, env, userId) {
     await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
     if (screenshots) await saveJsonSetting(env, userId, 'screenshots', screenshots)
 
-    const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
-    const existingIds = new Set(existing.results.map(r => r.id))
-    const incomingIds = new Set(cards.map(c => c.id))
+    if (hasCardsPayload) {
+      const existing = await env.DB.prepare('SELECT id FROM cards WHERE user_id = ?').bind(userId).all()
+      const existingIds = new Set(existing.results.map(r => r.id))
+      const incomingIds = new Set(incomingCards.map(c => c.id))
 
-    for (const id of existingIds) {
-      if (!incomingIds.has(id)) {
-        await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
-        await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
+      for (const id of existingIds) {
+        if (!incomingIds.has(id)) {
+          await env.DB.prepare('DELETE FROM cards WHERE id = ? AND user_id = ?').bind(id, userId).run()
+          await env.DB.prepare('DELETE FROM images WHERE card_id = ? AND user_id = ?').bind(id, userId).run()
+        }
       }
+
+      for (const card of incomingCards) {
+        const { id, type, x, y, w, h, linkedTo, ...rest } = card
+        const content = JSON.stringify(rest)
+
+        if (existingIds.has(id)) {
+          await env.DB.prepare(
+            'UPDATE cards SET type=?, x=?, y=?, w=?, h=?, content=?, linked_to=?, updated_at=datetime(\'now\') WHERE id=? AND user_id=?'
+          ).bind(type, x, y, w, h, content, linkedTo || null, id, userId).run()
+        } else {
+          await env.DB.prepare(
+            'INSERT INTO cards (id, type, x, y, w, h, content, linked_to, user_id) VALUES (?,?,?,?,?,?,?,?,?)'
+          ).bind(id, type, x, y, w, h, content, linkedTo || null, userId).run()
+        }
+      }
+
+      await syncAssetReferences(incomingCards, env, userId)
     }
 
-    for (const card of cards) {
-      const { id, type, x, y, w, h, linkedTo, ...rest } = card
-      const content = JSON.stringify(rest)
+    return json({ ok: true })
+  } catch (e) {
+    return json({ error: e.message }, 500)
+  }
+}
 
-      if (existingIds.has(id)) {
-        await env.DB.prepare(
-          'UPDATE cards SET type=?, x=?, y=?, w=?, h=?, content=?, linked_to=?, updated_at=datetime(\'now\') WHERE id=? AND user_id=?'
-        ).bind(type, x, y, w, h, content, linkedTo || null, id, userId).run()
-      } else {
-        await env.DB.prepare(
-          'INSERT INTO cards (id, type, x, y, w, h, content, linked_to, user_id) VALUES (?,?,?,?,?,?,?,?,?)'
-        ).bind(id, type, x, y, w, h, content, linkedTo || null, userId).run()
-      }
+async function handleSaveSettings(req, env, userId) {
+  const { settings, uiSettings } = await req.json()
+
+  try {
+    if (settings !== undefined) {
+      const existingSettings = await loadJsonSetting(env, userId, 'provider_settings')
+      await saveJsonSetting(env, userId, 'provider_settings', mergeProviderSettings(existingSettings, settings))
     }
-
-    await syncAssetReferences(cards, env, userId)
-
+    if (uiSettings !== undefined) {
+      await saveJsonSetting(env, userId, 'ui_settings', uiSettings)
+    }
     return json({ ok: true })
   } catch (e) {
     return json({ error: e.message }, 500)
@@ -2627,6 +2648,7 @@ async function handleRequest(req, env) {
 
     if (path === '/api/board' && req.method === 'GET') return handleGetBoard(req, env, userId)
     if (path === '/api/board' && req.method === 'PUT') return handleSaveBoard(req, env, userId)
+    if (path === '/api/settings' && req.method === 'PUT') return handleSaveSettings(req, env, userId)
     if (path === '/api/upload' && req.method === 'POST') return handleUpload(req, env, userId)
     if ((m = path.match(/^\/api\/assets\/([^/]+)$/)) && req.method === 'DELETE') {
       return handleDeleteAsset(req, env, m[1], userId)
