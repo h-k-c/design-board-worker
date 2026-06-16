@@ -2583,6 +2583,12 @@ ${gs}
       try {
         upstream = await callOpenAICompat(ep.apiUrl, ep.key, ep.model, null, { rawStream: true })
       } catch (e) {
+        await logAiFailure(env, userId, {
+          source: 'worker',
+          mode,
+          error: e.message || 'AI 请求失败',
+          context: { provider, model: resolvedModel, elapsedMs: Date.now() - startedAt, promptChars, imageCount: resolvedImages.length },
+        })
         return json({
           error: e.message || 'AI 请求失败',
           meta: { provider, model: resolvedModel, mode, elapsedMs: Date.now() - startedAt, promptChars },
@@ -2642,6 +2648,12 @@ ${gs}
       },
     })
   } catch (e) {
+    await logAiFailure(env, userId, {
+      source: 'worker',
+      mode,
+      error: e.message || 'AI 请求失败',
+      context: { provider, model: resolvedModel, elapsedMs: Date.now() - startedAt, promptChars, imageCount: resolvedImages.length },
+    })
     return json({
       error: e.message,
       meta: {
