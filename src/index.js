@@ -3,31 +3,8 @@
 // DEEPSEEK_API_KEY, ZHIPU_API_KEY
 // D1 binding: DB
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-}
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...CORS },
-  })
-}
-
-function withCors(response) {
-  if (!(response instanceof Response)) return response
-  const headers = new Headers(response.headers)
-  for (const [key, value] of Object.entries(CORS)) {
-    if (!headers.has(key)) headers.set(key, value)
-  }
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  })
-}
+import { CORS, json, withCors } from './http.js'
+import { authMiddleware, hashPassword, signJWT } from './auth.js'
 
 function sanitizeModelText(text) {
   return String(text || '')
@@ -37,59 +14,7 @@ function sanitizeModelText(text) {
     .trim()
 }
 
-// ── JWT ──
-
-async function getKey(secret) {
-  const enc = new TextEncoder()
-  return crypto.subtle.importKey(
-    'raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
-  )
-}
-
-function b64url(buf) {
-  return btoa(String.fromCharCode(...new Uint8Array(buf)))
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-async function signJWT(payload, secret) {
-  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
-  const body = b64url(new TextEncoder().encode(JSON.stringify(payload)))
-  const key = await getKey(secret)
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${header}.${body}`))
-  return `${header}.${body}.${b64url(sig)}`
-}
-
-async function verifyJWT(token, secret) {
-  try {
-    const [header, body, sig] = token.split('.')
-    const key = await getKey(secret)
-    const valid = await crypto.subtle.verify(
-      'HMAC', key,
-      Uint8Array.from(atob(sig.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
-      new TextEncoder().encode(`${header}.${body}`)
-    )
-    if (!valid) return null
-    const payload = JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/')))
-    if (payload.exp < Date.now() / 1000) return null
-    return payload
-  } catch {
-    return null
-  }
-}
-
-async function authMiddleware(req, env) {
-  const auth = req.headers.get('Authorization') || ''
-  const token = auth.replace('Bearer ', '')
-  return verifyJWT(token, env.JWT_SECRET)
-}
-
 // ── Helpers ──
-
-async function hashPassword(salt, password) {
-  const data = new TextEncoder().encode(salt + password)
-  const hash = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
 
 function parseDataUrl(data) {
   const match = String(data || '').match(/^data:([^;,]+)?;base64,([\s\S]+)$/)
@@ -241,6 +166,159 @@ async function handleGetLogs(req, env, userId) {
   } catch (e) {
     return json({ logs: [], error: e?.message || 'query failed' })
   }
+}
+
+// ── AI jobs ────────────────────────────────────────────────────────────────
+// A small D1-backed job layer for long model calls. Production uses Cloudflare
+// Queues when AI_QUEUE is bound; waitUntil/inline execution is only a local/dev
+// fallback. The existing streaming /api/ai path stays unchanged.
+const AI_JOBS_DDL = `CREATE TABLE IF NOT EXISTS ai_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  mode TEXT,
+  payload_json TEXT,
+  result_json TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  started_at TEXT,
+  finished_at TEXT
+)`
+
+async function ensureAiJobsTable(env) {
+  if (!env.DB) return
+  await env.DB.batch([
+    env.DB.prepare(AI_JOBS_DDL),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_ai_jobs_user_created ON ai_jobs(user_id, created_at)'),
+    env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_ai_jobs_status ON ai_jobs(status, updated_at)'),
+  ])
+}
+
+function extractSseText(raw) {
+  let text = ''
+  let streamError = ''
+  for (const line of String(raw || '').split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('data:')) continue
+    const payload = trimmed.slice(5).trim()
+    if (!payload || payload === '[DONE]') continue
+    try {
+      const obj = JSON.parse(payload)
+      if (obj.error) {
+        streamError = typeof obj.error === 'string'
+          ? obj.error
+          : (obj.error.message || obj.error.code || JSON.stringify(obj.error))
+        continue
+      }
+      const choice = obj.choices?.[0] || {}
+      const delta = choice.delta?.content
+        ?? choice.message?.content
+        ?? choice.text
+        ?? obj.output_text
+        ?? obj.text
+      if (typeof delta === 'string') text += delta
+    } catch {}
+  }
+  if (streamError) throw new Error(streamError)
+  return text || raw
+}
+
+async function aiJobResponsePayload(res) {
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('text/event-stream')) {
+    const raw = await res.text()
+    return { result: sanitizeModelText(extractSseText(raw)) }
+  }
+  const data = await res.json().catch(async () => ({ result: await res.text().catch(() => '') }))
+  if (data.result) data.result = sanitizeModelText(data.result)
+  return data
+}
+
+async function loadAiJobPayload(env, userId, jobId) {
+  const row = await env.DB.prepare(
+    'SELECT payload_json FROM ai_jobs WHERE id = ? AND user_id = ?'
+  ).bind(jobId, userId).first()
+  if (!row?.payload_json) throw new Error('任务 payload 不存在')
+  return JSON.parse(row.payload_json)
+}
+
+async function runAiJob(env, userId, jobId, payload = null) {
+  try {
+    if (!payload) payload = await loadAiJobPayload(env, userId, jobId)
+    await env.DB.prepare(
+      "UPDATE ai_jobs SET status = 'running', started_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(jobId, userId).run()
+    const req = new Request('https://design-board-worker.local/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const res = await handleAI(req, env, userId)
+    const data = await aiJobResponsePayload(res)
+    if (!res.ok) {
+      const err = data?.error || `AI job failed (${res.status})`
+      await env.DB.prepare(
+        "UPDATE ai_jobs SET status = 'failed', error = ?, result_json = ?, finished_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+      ).bind(String(err).slice(0, 2000), JSON.stringify(data || {}), jobId, userId).run()
+      return
+    }
+    await env.DB.prepare(
+      "UPDATE ai_jobs SET status = 'succeeded', result_json = ?, finished_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(JSON.stringify(data || {}), jobId, userId).run()
+  } catch (e) {
+    await env.DB.prepare(
+      "UPDATE ai_jobs SET status = 'failed', error = ?, finished_at = datetime('now'), updated_at = datetime('now') WHERE id = ? AND user_id = ?"
+    ).bind(String(e?.message || e || 'job failed').slice(0, 2000), jobId, userId).run()
+  }
+}
+
+async function handleCreateAiJob(req, env, userId, ctx) {
+  if (!env.DB) return json({ error: 'D1 database binding missing' }, 500)
+  const payload = await req.json().catch(() => null)
+  if (!payload || typeof payload !== 'object') return json({ error: '请求体无效' }, 400)
+  await ensureAiJobsTable(env)
+  const id = crypto.randomUUID()
+  await env.DB.prepare(
+    `INSERT INTO ai_jobs (id, user_id, status, mode, payload_json, created_at, updated_at)
+     VALUES (?, ?, 'queued', ?, ?, datetime('now'), datetime('now'))`
+  ).bind(id, userId, String(payload.mode || 'single').slice(0, 60), JSON.stringify(payload)).run()
+  if (env.AI_QUEUE) {
+    await env.AI_QUEUE.send({ jobId: id, userId })
+    return json({ id, status: 'queued', executor: 'queue' }, 202)
+  }
+  const run = runAiJob(env, userId, id, payload)
+  if (ctx?.waitUntil) {
+    ctx.waitUntil(run)
+    return json({ id, status: 'queued', executor: 'waitUntil-dev-fallback' }, 202)
+  }
+  await run
+  return json({ id, status: 'queued', executor: 'inline-dev-fallback' }, 202)
+}
+
+async function handleGetAiJob(req, env, id, userId) {
+  if (!env.DB) return json({ error: 'D1 database binding missing' }, 500)
+  await ensureAiJobsTable(env)
+  const row = await env.DB.prepare(
+    `SELECT id, status, mode, result_json, error, created_at, updated_at, started_at, finished_at
+     FROM ai_jobs WHERE id = ? AND user_id = ?`
+  ).bind(id, userId).first()
+  if (!row) return json({ error: '任务不存在' }, 404)
+  let result = null
+  if (row.result_json) {
+    try { result = JSON.parse(row.result_json) } catch { result = { raw: row.result_json } }
+  }
+  return json({
+    id: row.id,
+    status: row.status,
+    mode: row.mode,
+    result,
+    error: row.error || '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+  })
 }
 
 function mergeProviderSettings(existing = {}, incoming = {}) {
@@ -2684,9 +2762,9 @@ export default {
     )
   },
 
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     try {
-      return withCors(await handleRequest(req, env))
+      return withCors(await handleRequest(req, env, ctx))
     } catch (e) {
       // Top-level safety net: any uncaught throw must still carry CORS headers,
       // otherwise the browser reports a misleading "No Access-Control-Allow-Origin"
@@ -2694,9 +2772,17 @@ export default {
       return withCors(json({ error: '服务器内部错误：' + (e?.message || 'unknown') }, 500))
     }
   },
+
+  async queue(batch, env) {
+    for (const message of batch.messages) {
+      const { jobId, userId } = message.body || {}
+      if (!jobId || !userId) continue
+      await runAiJob(env, userId, jobId)
+    }
+  },
 }
 
-async function handleRequest(req, env) {
+async function handleRequest(req, env, ctx) {
     const url = new URL(req.url)
     const path = url.pathname
 
@@ -2731,8 +2817,16 @@ async function handleRequest(req, env) {
     if ((m = path.match(/^\/api\/assets\/([^/]+)$/)) && req.method === 'DELETE') {
       return handleDeleteAsset(req, env, m[1], userId)
     }
-    if (path === '/api/assets/cleanup' && req.method === 'POST') return handleCleanupAssets(req, env)
+    if (path === '/api/assets/cleanup' && req.method === 'POST') {
+      const adminToken = req.headers.get('X-Admin-Token') || ''
+      if (!env.ADMIN_TOKEN || adminToken !== env.ADMIN_TOKEN) return json({ error: '仅管理员可执行资产清理' }, 403)
+      return handleCleanupAssets(req, env)
+    }
     if (path === '/api/ai' && req.method === 'POST') return handleAI(req, env, userId)
+    if (path === '/api/ai/jobs' && req.method === 'POST') return handleCreateAiJob(req, env, userId, ctx)
+    if ((m = path.match(/^\/api\/ai\/jobs\/([^/]+)$/)) && req.method === 'GET') {
+      return handleGetAiJob(req, env, m[1], userId)
+    }
     if (path === '/api/logs' && req.method === 'POST') return handleLogAi(req, env, userId)
     if (path === '/api/logs' && req.method === 'GET') return handleGetLogs(req, env, userId)
 
